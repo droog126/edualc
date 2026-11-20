@@ -146,7 +146,7 @@ exec su -s /bin/bash airlock -c "
 
     websockify --web /usr/share/novnc 0.0.0.0:6080 127.0.0.1:5978 &
     websockify --web /usr/share/novnc 0.0.0.0:6081 127.0.0.1:5979 &
-    python3 /usr/local/bin/clipboard-bridge.py &
+    /usr/bin/python3 /usr/local/bin/clipboard-bridge.py &
 
     # Keep isolated Chromium running on Display :79
     (

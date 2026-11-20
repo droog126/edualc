@@ -116,6 +116,7 @@ type hostConfig struct {
 	ExtraToolsFile string
 	AllowedTools   map[string]bool
 	Tracker        *auditTracker
+	AutoMgr        *autoToolManager
 }
 
 func (c *hostConfig) isAllowed(name string) bool {
@@ -161,6 +162,7 @@ func main() {
 	if cfg.WorkspaceHost == "" {
 		log.Fatalf("[hostexec] WORKSPACE_DIR 未配置")
 	}
+	cfg.AutoMgr.syncAllShims(&cfg)
 	initResumeScheduler()
 
 	mux := http.NewServeMux()
@@ -176,6 +178,15 @@ func main() {
 	})
 	mux.HandleFunc("/tools/add", func(w http.ResponseWriter, r *http.Request) {
 		handleAddTool(w, r, &cfg)
+	})
+	mux.HandleFunc("/tools/ensure", func(w http.ResponseWriter, r *http.Request) {
+		handleEnsureTool(w, r, &cfg)
+	})
+	mux.HandleFunc("/tools/install", func(w http.ResponseWriter, r *http.Request) {
+		handleInstallTool(w, r, &cfg)
+	})
+	mux.HandleFunc("/tools/policy", func(w http.ResponseWriter, r *http.Request) {
+		handleAutoPolicy(w, r, &cfg)
 	})
 	mux.HandleFunc("/vm/status", func(w http.ResponseWriter, r *http.Request) {
 		handleVMStatus(w, r, &cfg)
@@ -230,7 +241,9 @@ func loadConfig() hostConfig {
 		{Guest: "/tmp/edualc", Host: sharedTmpHost},
 	}
 
-	rawTools := envOr("HOSTEXEC_ALLOW_TOOLS", "cargo,rustc,rustup,just,make,git,bun,rg,screencapture,agy,codex")
+	autoMgr := newAutoToolManager()
+
+	rawTools := envOr("HOSTEXEC_ALLOW_TOOLS", "cargo,rustc,rustup,just,make,git,bun,rg,screencapture,agy,codex,python3,python,pip,pip3,node,npm,npx,brew")
 	allowed := make(map[string]bool)
 	for _, t := range strings.Split(rawTools, ",") {
 		t = strings.TrimSpace(t)
@@ -259,6 +272,7 @@ func loadConfig() hostConfig {
 		ExtraToolsFile: extraFile,
 		AllowedTools:   allowed,
 		Tracker:        &auditTracker{},
+		AutoMgr:        autoMgr,
 	}
 }
 
@@ -292,17 +306,28 @@ func handleStatus(w http.ResponseWriter, r *http.Request, cfg *hostConfig) {
 		})
 	}
 	totalRuns, recent := cfg.Tracker.snapshot()
+	var autoPol hostAutoPolicy
+	var venvReady bool
+	var venvPy string
+	var installEvs []installEvent
+	if cfg.AutoMgr != nil {
+		autoPol, venvReady, venvPy, installEvs = cfg.AutoMgr.snapshot()
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"online":          true,
-		"listen_addr":     cfg.ListenAddr,
-		"workspace_guest": cfg.WorkspaceGuest,
-		"workspace_host":  cfg.WorkspaceHost,
-		"available_count": availCount,
-		"total_tools":     len(tools),
-		"total_runs":      totalRuns,
-		"tools":           tools,
-		"recent_runs":     recent,
+		"online":           true,
+		"listen_addr":      cfg.ListenAddr,
+		"workspace_guest":  cfg.WorkspaceGuest,
+		"workspace_host":   cfg.WorkspaceHost,
+		"available_count":  availCount,
+		"total_tools":      len(tools),
+		"total_runs":       totalRuns,
+		"tools":            tools,
+		"recent_runs":      recent,
+		"auto_policy":      autoPol,
+		"host_venv_ready":  venvReady,
+		"host_venv_python": venvPy,
+		"install_events":   installEvs,
 	})
 }
 
@@ -391,7 +416,8 @@ func scrubHostToGuest(text string, mounts []pathMount) string {
 }
 
 var allowedEnvPrefixes = []string{
-	"CARGO_", "RUST", "LK2_", "BEVY_", "NEXTEST_", "WGPU_", "RAYON_",
+	"CARGO_", "RUST", "BEVY_", "NEXTEST_", "WGPU_", "RAYON_",
+	"PYTHON", "PIP_", "UV_", "NODE_", "NPM_", "PLAYWRIGHT_", "HOMEBREW_",
 }
 var allowedEnvExact = map[string]bool{
 	"NO_COLOR": true, "TERM": true, "CI": true, "COLORTERM": true, "TMPDIR": true,
@@ -470,11 +496,33 @@ func handleExec(w http.ResponseWriter, r *http.Request, cfg *hostConfig) {
 		return
 	}
 	toolName := strings.TrimSpace(req.Cmd)
-	if !cfg.isAllowed(toolName) {
-		http.Error(w, fmt.Sprintf("命令 %q 不在 HOSTEXEC_ALLOW_TOOLS 白名单中", toolName), http.StatusForbidden)
+	if containsForbiddenAnthropicTarget(req.Args) {
+		http.Error(w, "防封红线拦截：禁止经宿主机直连网络访问 Anthropic/Claude 目标", http.StatusForbidden)
 		return
 	}
+	if !cfg.isAllowed(toolName) {
+		if cfg.AutoMgr != nil {
+			res := cfg.AutoMgr.ensureTool(r.Context(), cfg, toolName, true, false)
+			if !res.Ready {
+				http.Error(w, fmt.Sprintf("命令 %q 未获宿主机授权：%s", toolName, res.Reason), http.StatusForbidden)
+				return
+			}
+		} else {
+			http.Error(w, fmt.Sprintf("命令 %q 不在 HOSTEXEC_ALLOW_TOOLS 白名单中", toolName), http.StatusForbidden)
+			return
+		}
+	}
 	binPath, err := exec.LookPath(toolName)
+	if err != nil {
+		// If allowed tool isn't installed yet on host and auto-install is enabled, install it on demand!
+		if cfg.AutoMgr != nil {
+			res := cfg.AutoMgr.ensureTool(r.Context(), cfg, toolName, true, false)
+			if res.Ready && res.HostPath != "" {
+				binPath = res.HostPath
+				err = nil
+			}
+		}
+	}
 	if err != nil {
 		http.Error(w, fmt.Sprintf("宿主机未找到命令 %q: %v", toolName, err), http.StatusBadRequest)
 		return

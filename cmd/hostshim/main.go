@@ -32,7 +32,10 @@ type streamEvent struct {
 }
 
 func collectForwardedEnv() map[string]string {
-	prefixes := []string{"CARGO_", "RUST", "LK2_", "BEVY_", "NEXTEST_", "WGPU_", "RAYON_"}
+	prefixes := []string{
+		"CARGO_", "RUST", "BEVY_", "NEXTEST_", "WGPU_", "RAYON_",
+		"PYTHON", "PIP_", "UV_", "NODE_", "NPM_", "PLAYWRIGHT_", "HOMEBREW_",
+	}
 	exact := map[string]bool{"NO_COLOR": true, "TERM": true, "CI": true, "COLORTERM": true, "TMPDIR": true}
 	out := make(map[string]string)
 	for _, kv := range os.Environ() {

@@ -361,7 +361,11 @@ func (c *Checker) UpdateClaudeCode(ctx context.Context) (string, error) {
 
 	cmdCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(cmdCtx, "npm", "install", "-g", "@anthropic-ai/claude-code@latest")
+	npmBin := "/usr/local/bin/npm"
+	if _, statErr := os.Stat(npmBin); statErr != nil {
+		npmBin = "npm"
+	}
+	cmd := exec.CommandContext(cmdCtx, npmBin, "install", "-g", "@anthropic-ai/claude-code@latest")
 	env := os.Environ()
 	if p := strings.TrimSpace(c.cfg.ProxyURL); p != "" {
 		env = append(env, "HTTP_PROXY="+p, "HTTPS_PROXY="+p, "http_proxy="+p, "https_proxy="+p)

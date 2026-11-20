@@ -87,6 +87,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/admin/updates/claude-code", s.requireAuth(s.handleAdminUpdateClaudeCode))
 	s.mux.HandleFunc("/admin/hostexec/test", s.requireAuth(s.handleAdminHostExecTest))
 	s.mux.HandleFunc("/admin/hostexec/add-tool", s.requireAuth(s.handleAdminHostExecAddTool))
+	s.mux.HandleFunc("/admin/hostexec/install-tool", s.requireAuth(s.handleAdminHostExecInstallTool))
+	s.mux.HandleFunc("/admin/hostexec/policy", s.requireAuth(s.handleAdminHostExecPolicy))
 	s.mux.HandleFunc("/admin/hostexec/unproxied/clear", s.requireAuth(s.handleAdminUnproxiedClear))
 	s.mux.HandleFunc("/admin/vm/apply", s.requireAuth(s.handleAdminVMApply))
 	s.mux.HandleFunc("/admin/vm/restart", s.requireAuth(s.handleAdminVMRestart))
@@ -681,6 +683,76 @@ func (s *Server) handleAdminHostExecAddTool(w http.ResponseWriter, r *http.Reque
 	_ = os.Remove(linkPath)
 	if err := os.Symlink("/usr/local/bin/hostshim", linkPath); err != nil {
 		writeOpenAIError(w, http.StatusInternalServerError, "创建共享代理软链失败: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, s.buildAdminPayload(r.Context()))
+}
+
+func (s *Server) handleAdminHostExecInstallTool(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeOpenAIError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+	var bodyReq struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&bodyReq); err != nil {
+		writeOpenAIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	name := strings.TrimSpace(bodyReq.Name)
+	if name == "" || strings.ContainsAny(name, "/\\ \t\n\r;|&$`") {
+		writeOpenAIError(w, http.StatusBadRequest, "无效命令名")
+		return
+	}
+	payload, _ := json.Marshal(map[string]string{"name": name})
+	installCtx, cancel := context.WithTimeout(r.Context(), 4*time.Minute)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(installCtx, http.MethodPost, s.hostExecBaseURL()+"/tools/install", bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	if tok := s.hostExecToken(); tok != "" {
+		req.Header.Set("X-HostExec-Token", tok)
+	}
+	client := &http.Client{Timeout: 4 * time.Minute}
+	resp, err := client.Do(req)
+	if err != nil {
+		writeOpenAIError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	if resp.StatusCode != http.StatusOK {
+		writeOpenAIError(w, http.StatusBadRequest, strings.TrimSpace(string(raw)))
+		return
+	}
+	// Also ensure shared shim symlink exists immediately
+	_ = os.MkdirAll("/data/runtime/shims", 0o755)
+	linkPath := filepath.Join("/data/runtime/shims", name)
+	_ = os.Remove(linkPath)
+	_ = os.Symlink("/usr/local/bin/hostshim", linkPath)
+	writeJSON(w, http.StatusOK, s.buildAdminPayload(r.Context()))
+}
+
+func (s *Server) handleAdminHostExecPolicy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeOpenAIError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+	body, _ := io.ReadAll(io.LimitReader(r.Body, 4<<10))
+	req, _ := http.NewRequestWithContext(r.Context(), http.MethodPost, s.hostExecBaseURL()+"/tools/policy", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if tok := s.hostExecToken(); tok != "" {
+		req.Header.Set("X-HostExec-Token", tok)
+	}
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		writeOpenAIError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 16<<10))
+		writeOpenAIError(w, resp.StatusCode, strings.TrimSpace(string(raw)))
 		return
 	}
 	writeJSON(w, http.StatusOK, s.buildAdminPayload(r.Context()))

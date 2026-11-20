@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -200,11 +202,68 @@ func appendRecord(rec record) {
 	_ = f.Close()
 }
 
+func ensureToolOnHost(binName string, missingInGuest bool) bool {
+	if trivialBuiltins[binName] {
+		return false
+	}
+	base := strings.TrimSpace(os.Getenv("HOSTEXEC_URL"))
+	if base == "" {
+		base = "http://gateway:18082/exec"
+	}
+	base = strings.TrimSuffix(base, "/exec")
+	base = strings.TrimRight(base, "/")
+	endpoint := base + "/tools/ensure"
+
+	token := strings.TrimSpace(os.Getenv("HOSTEXEC_TOKEN"))
+	if token == "" {
+		token = strings.TrimSpace(os.Getenv("INTERNAL_TOKEN"))
+	}
+
+	timeout := 3 * time.Second
+	if missingInGuest {
+		timeout = 180 * time.Second
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"name":             binName,
+		"missing_in_guest": missingInGuest,
+	})
+	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return false
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("X-HostExec-Token", token)
+	}
+	client := &http.Client{
+		Timeout:   timeout,
+		Transport: &http.Transport{Proxy: nil},
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+	var out struct {
+		Ready bool `json:"ready"`
+	}
+	if json.NewDecoder(io.LimitReader(resp.Body, 8<<10)).Decode(&out) != nil {
+		return false
+	}
+	return out.Ready
+}
+
 func main() {
 	if len(os.Args) >= 3 && os.Args[1] == "--not-found" {
 		binName := filepath.Base(os.Args[2])
 		full := strings.Join(os.Args[2:], " ")
 		if validBinRe.MatchString(binName) && !isProxied(binName) {
+			if ensureToolOnHost(binName, true) {
+				return
+			}
 			cwd, _ := os.Getwd()
 			appendRecord(record{
 				TS: time.Now().UTC().Format(time.RFC3339), Bin: binName,
@@ -250,12 +309,17 @@ func main() {
 			continue
 		}
 		_, lookErr := exec.LookPath(binName)
+		missing := lookErr != nil
+		// Auto-proxy (if present on host) or auto-install (if missing & allowed) BEFORE Bash executes!
+		if ensureToolOnHost(binName, missing) {
+			continue
+		}
 		appendRecord(record{
 			TS:      time.Now().UTC().Format(time.RFC3339),
 			Bin:     binName,
 			Cmd:     truncate(cmdline, 300),
 			Cwd:     cwd,
-			Missing: lookErr != nil,
+			Missing: missing,
 			Source:  "claude_hook",
 		})
 	}

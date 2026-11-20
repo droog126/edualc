@@ -731,13 +731,32 @@
         </div>
       </div>
 
+      <div class="sheet" style="margin-bottom:18px">
+        <div class="sheet-body">
+          <div class="row" style="gap:14px;flex-wrap:wrap;justify-content:space-between">
+            <div class="row" style="gap:16px;flex-wrap:wrap">
+              <label style="margin:0;display:inline-flex;align-items:center;gap:6px;cursor:pointer;color:var(--ink);font-size:13px;font-weight:500">
+                <input type="checkbox" id="hxAutoProxy" style="width:auto" onchange="hxPolicyDirty=true" />
+                <span>宿主机已有工具自动接管代理</span>
+              </label>
+              <label style="margin:0;display:inline-flex;align-items:center;gap:6px;cursor:pointer;color:var(--ink);font-size:13px;font-weight:500">
+                <input type="checkbox" id="hxAutoInstall" style="width:auto" onchange="hxPolicyDirty=true" />
+                <span>宿主机缺失命令自动安装并代理（brew / pip / npm / winget）</span>
+              </label>
+              <span id="hxVenvTag" class="tag muted">宿主 Python 环境检测中</span>
+            </div>
+            <button class="btn primary sm" id="hxPolicySaveBtn" onclick="saveHostPolicy()">保存自动策略</button>
+          </div>
+        </div>
+      </div>
+
       <div class="split-2">
         <div class="sheet" style="margin-bottom:0">
           <div class="sheet-head">
             <span class="sheet-title">已透传宿主机工具清单</span>
             <div class="row">
-              <input id="addHostToolInput" placeholder="新增命令，如 gh / ffmpeg" style="width:165px;height:27px;padding:3px 8px;font-size:12px" onkeydown="if(event.key==='Enter')addHostTool()" />
-              <button class="btn sm primary" onclick="addHostTool()">加入代理</button>
+              <input id="addHostToolInput" placeholder="新增或安装命令，如 gh / ffmpeg" style="width:185px;height:27px;padding:3px 8px;font-size:12px" onkeydown="if(event.key==='Enter')installHostTool()" />
+              <button class="btn sm primary" onclick="installHostTool()">安装 / 加入代理</button>
             </div>
           </div>
           <div id="hxToolsLedger"></div>
@@ -752,7 +771,15 @@
                 <button class="btn sm" onclick="clearUnproxied()">清空记录</button>
               </div>
             </div>
-            <div id="hxUnproxiedLedger" class="sheet-scroll" style="max-height:280px"></div>
+            <div id="hxUnproxiedLedger" class="sheet-scroll" style="max-height:240px"></div>
+          </div>
+
+          <div class="sheet" id="hxInstallSheet" style="display:none">
+            <div class="sheet-head">
+              <span class="sheet-title">自动接管 / 自动安装记录</span>
+              <span class="sheet-title" style="font-weight:400" id="hxInstallCount">0 条</span>
+            </div>
+            <div id="hxInstallLedger" class="sheet-scroll" style="max-height:200px"></div>
           </div>
 
           <div class="sheet" style="margin-bottom:0">
@@ -760,7 +787,7 @@
               <span class="sheet-title">最近宿主机执行记录</span>
               <span class="sheet-title" style="font-weight:400">最近 25 条</span>
             </div>
-            <div id="hxRunsLedger" class="sheet-scroll" style="max-height:300px"></div>
+            <div id="hxRunsLedger" class="sheet-scroll" style="max-height:280px"></div>
           </div>
         </div>
       </div>
@@ -1431,6 +1458,7 @@ async function restartVM() {
   } catch (e) { toast('重启失败：' + e.message); }
 }
 
+let hxPolicyDirty = false;
 function renderHostExec() {
   const hx = state.hostexec || {};
   const badge = document.getElementById('navHostCount');
@@ -1440,6 +1468,24 @@ function renderHostExec() {
   } else {
     badge.textContent = '离线';
     badge.style.color = 'var(--fail)';
+  }
+
+  const ap = hx.auto_policy || {};
+  if (!hxPolicyDirty) {
+    const pEl = document.getElementById('hxAutoProxy');
+    if (pEl) pEl.checked = !!ap.auto_proxy;
+    const iEl = document.getElementById('hxAutoInstall');
+    if (iEl) iEl.checked = !!ap.auto_install;
+  }
+  const venvTag = document.getElementById('hxVenvTag');
+  if (venvTag) {
+    if (hx.host_venv_ready) {
+      venvTag.className = 'tag ok';
+      venvTag.textContent = `宿主专属 ${hx.host_venv_python || 'Python'} venv 就绪`;
+    } else if (hx.online) {
+      venvTag.className = 'tag muted';
+      venvTag.textContent = '宿主 Python venv 未初始化';
+    }
   }
 
   document.getElementById('hxState').textContent = hx.online ? '在线运行中' : '离线';
@@ -1461,7 +1507,7 @@ function renderHostExec() {
       row.innerHTML = `
         <div class="ledger-name"><span class="dot ${t.available ? 'ok' : 'warn'}"></span><span style="font-family:var(--mono)">${esc(t.name)}</span></div>
         <div class="ledger-ev" style="font-family:var(--mono);font-size:12px">${t.available ? esc(t.host_path) : '宿主机 PATH 中未检测到此命令'}</div>
-        <div style="text-align:right">${t.available ? `<button class="btn sm" onclick="testHostTool('${esc(t.name)}', this)">测试</button>` : '<span class="tag warn">缺失</span>'}</div>`;
+        <div style="text-align:right">${t.available ? `<button class="btn sm" onclick="testHostTool('${esc(t.name)}', this)">测试</button>` : `<button class="btn sm accent" onclick="installHostTool('${esc(t.name)}', this)">自动安装</button>`}</div>`;
       tb.appendChild(row);
     });
   }
@@ -1471,7 +1517,7 @@ function renderHostExec() {
   const unp = state.unproxied_cmds || [];
   document.getElementById('hxUnproxiedCount').textContent = `${unp.length} 项`;
   if (!unp.length) {
-    ub.innerHTML = '<div style="padding:18px;color:var(--ink-3);font-size:13px">暂未捕获到未代理的非基础命令（Claude 通过 Bash 调用任意未代理命令，或容器内触发 command not found 时会自动记在此处）。</div>';
+    ub.innerHTML = '<div style="padding:18px;color:var(--ink-3);font-size:13px">暂未捕获到未代理的非基础命令（开启上方自动策略后，可安全透传的工具会自动接管并安装）。</div>';
   } else {
     unp.forEach(u => {
       const cls = u.missing ? 'fail' : 'warn';
@@ -1481,8 +1527,28 @@ function renderHostExec() {
       row.innerHTML = `
         <div class="ledger-name"><span class="dot ${cls}"></span><span style="font-family:var(--mono)">${esc(u.bin)}</span></div>
         <div class="ledger-ev"><div class="clamp-2" title="${esc(u.last_cmd || '')}" style="font-family:var(--mono);font-size:12px;color:var(--ink)">${esc(u.last_cmd || '')}</div><div style="font-size:11.5px;color:var(--ink-3)">${lbl} · 最近 ${u.last_ts ? new Date(u.last_ts).toLocaleTimeString() : '-'}</div></div>
-        <div style="text-align:right"><button class="btn sm accent" onclick="addHostTool('${esc(u.bin)}')">加入代理</button></div>`;
+        <div style="text-align:right"><button class="btn sm accent" onclick="installHostTool('${esc(u.bin)}', this)">${u.missing ? '安装并代理' : '加入代理'}</button></div>`;
       ub.appendChild(row);
+    });
+  }
+
+  const instSheet = document.getElementById('hxInstallSheet');
+  const instLedger = document.getElementById('hxInstallLedger');
+  const instEvs = hx.install_events || [];
+  if (instSheet && instLedger) {
+    instSheet.style.display = instEvs.length ? '' : 'none';
+    document.getElementById('hxInstallCount').textContent = `${instEvs.length} 条`;
+    instLedger.innerHTML = '';
+    instEvs.forEach(ev => {
+      const cls = ev.success ? 'ok' : 'fail';
+      const lbl = ev.action === 'auto_install' ? '自动安装' : (ev.action === 'manual_install' ? '手动安装' : (ev.action === 'auto_proxy' ? '自动接管' : '失败'));
+      const row = document.createElement('div');
+      row.className = 'ledger-row';
+      row.innerHTML = `
+        <div class="ledger-name"><span class="dot ${cls}"></span><span style="font-family:var(--mono)">${esc(ev.tool)}</span></div>
+        <div class="ledger-ev"><div style="font-size:12px;color:var(--ink)">${esc(ev.message || '')}</div><div style="font-size:11.5px;color:var(--ink-3)">${ev.ts ? new Date(ev.ts).toLocaleTimeString() : '-'} · ${ev.duration_ms || 0}ms</div></div>
+        <div style="text-align:right"><span class="tag ${cls}">${lbl}</span></div>`;
+      instLedger.appendChild(row);
     });
   }
 
@@ -1531,6 +1597,45 @@ async function addHostTool(explicitName) {
     toast(`已将 ${name} 动态加入宿主机代理（立即生效，免重启）`);
   } catch (e) {
     toast(`加入失败：${e.message}`);
+  }
+}
+
+async function installHostTool(explicitName, btn) {
+  const inp = document.getElementById('addHostToolInput');
+  const name = (explicitName || inp.value || '').trim();
+  if (!name) return;
+  const origText = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '处理中...'; }
+  toast(`正在宿主机检测/安装并代理 ${name}...`);
+  try {
+    const data = await req('/admin/hostexec/install-tool', {method: 'POST', body: JSON.stringify({name})});
+    if (!explicitName && inp) inp.value = '';
+    render(data);
+    toast(`${name} 已在宿主机就绪并自动挂接代理（免重启立即生效）`);
+  } catch (e) {
+    toast(`安装/代理失败：${e.message}`);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = origText; }
+  }
+}
+
+async function saveHostPolicy() {
+  const btn = document.getElementById('hxPolicySaveBtn');
+  if (btn) btn.disabled = true;
+  try {
+    const auto_proxy = !!document.getElementById('hxAutoProxy').checked;
+    const auto_install = !!document.getElementById('hxAutoInstall').checked;
+    const data = await req('/admin/hostexec/policy', {
+      method: 'POST',
+      body: JSON.stringify({auto_proxy, auto_install})
+    });
+    hxPolicyDirty = false;
+    render(data);
+    toast('宿主机自动接管与自动安装策略已保存');
+  } catch (e) {
+    toast('保存失败：' + e.message);
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 

@@ -44,3 +44,25 @@ func TestPathMappingEnvAndGitLockClassification(t *testing.T) {
 		t.Fatalf("git commit should be serialized write")
 	}
 }
+
+func TestAutoToolSafetyGuards(t *testing.T) {
+	for _, blocked := range []string{"sudo", "rm", "curl", "wget", "ssh", "claude", "chromium", "open"} {
+		if ok, _ := isUnsafeAutoTool(blocked); !ok {
+			t.Fatalf("expected %q to be blocked from host auto-proxy/install", blocked)
+		}
+	}
+	for _, safe := range []string{"ffmpeg", "gh", "uv", "python3", "pip", "cmake", "pytest"} {
+		if ok, reason := isUnsafeAutoTool(safe); ok {
+			t.Fatalf("expected %q to be allowed, got blocked: %s", safe, reason)
+		}
+	}
+	if !containsForbiddenAnthropicTarget([]string{"https://api.anthropic.com/v1/messages"}) {
+		t.Fatalf("expected api.anthropic.com to be rejected")
+	}
+	if !containsForbiddenAnthropicTarget([]string{"install", "-g", "@anthropic-ai/claude-code"}) {
+		t.Fatalf("expected @anthropic-ai/claude-code to be rejected")
+	}
+	if containsForbiddenAnthropicTarget([]string{"install", "scipy", "pillow"}) {
+		t.Fatalf("expected normal pip install to pass")
+	}
+}
