@@ -41,6 +41,15 @@
 
 ## 📸 实机界面预览
 
+<div align="center">
+  <b>🖥️ 官方 Claude 桌面端（浏览器同源直连 · 独立容器不断线）</b><br />
+  <sub>右下角内置 <code>edualc</code> 悬浮工具条：支持双向 UTF-8 剪贴板、Mac/Win 快捷键、宿主机原生中文输入条（<code>⌥Space</code>）与外链自动跳转隔离 Chromium。</sub>
+  <br /><br />
+  <img src="docs/assets/screenshot-desktop.png" width="880" alt="edualc 内置官方 Claude 桌面端实机画面" />
+</div>
+
+<br />
+
 <table>
   <tr>
     <td width="50%" valign="top">
