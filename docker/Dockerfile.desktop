@@ -1,0 +1,80 @@
+FROM golang:1.25-bookworm AS shim_builder
+WORKDIR /src
+ENV GOPROXY=https://goproxy.cn,direct
+COPY go.mod go.sum ./
+COPY cmd/hostshim ./cmd/hostshim
+COPY cmd/cmdhook ./cmd/cmdhook
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/hostshim ./cmd/hostshim \
+    && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/edualc-cmd-hook ./cmd/cmdhook
+
+FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    gnupg \
+    dbus-x11 \
+    xauth \
+    x11-utils \
+    x11-xserver-utils \
+    tigervnc-standalone-server \
+    tigervnc-tools \
+    openbox \
+    gnome-keyring \
+    libglib2.0-bin \
+    xdg-utils \
+    novnc \
+    websockify \
+    chromium \
+    tzdata \
+    locales \
+    jq \
+    fonts-dejavu-core \
+    fonts-wqy-microhei \
+    && for loc in en_US.UTF-8 en_GB.UTF-8 en_CA.UTF-8 en_AU.UTF-8 en_NZ.UTF-8 en_IE.UTF-8 en_SG.UTF-8 en_IN.UTF-8 ja_JP.UTF-8 ko_KR.UTF-8 zh_TW.UTF-8 de_DE.UTF-8 de_CH.UTF-8 fr_FR.UTF-8 nl_NL.UTF-8 it_IT.UTF-8 es_ES.UTF-8 pt_BR.UTF-8 sv_SE.UTF-8 pl_PL.UTF-8; do \
+         sed -i "s/^# *${loc}/${loc}/" /etc/locale.gen; \
+       done \
+    && locale-gen \
+    && curl -fsSL --proto '=https' --proto-redir '=https' https://downloads.claude.ai/claude-desktop/key.asc -o /tmp/claude-key.asc \
+    && FPR="$(gpg --batch --show-keys --with-colons /tmp/claude-key.asc | awk -F: '$1 == "fpr" {print $10; exit}')" \
+    && test "$FPR" = "31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE" \
+    && install -m 0644 /tmp/claude-key.asc /usr/share/keyrings/claude-desktop-archive-keyring.asc \
+    && rm -f /tmp/claude-key.asc \
+    && printf '%s\n' 'deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/claude-desktop-archive-keyring.asc] https://downloads.claude.ai/claude-desktop/apt/stable stable main' > /etc/apt/sources.list.d/claude-desktop.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends claude-desktop \
+    && rm -rf /var/lib/apt/lists/*
+
+# Lightweight Chinese Pinyin IME (fcitx5) + X11 clipboard bridge (autocutsel/xclip) via fast domestic mirror
+ARG APT_MIRROR=mirrors.aliyun.com
+RUN sed -i "s|deb.debian.org|${APT_MIRROR}|g; s|security.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources 2>/dev/null || true \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    fcitx5 \
+    fcitx5-pinyin \
+    fcitx5-frontend-gtk3 \
+    autocutsel \
+    xclip \
+    file \
+    binutils \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd -m -d /data/desktop -s /bin/bash airlock && mkdir -p /data/desktop /etc/airlock /workspace
+
+COPY docker/desktop-openbox.xml /etc/airlock/openbox-rc.xml
+COPY docker/desktop-menu.xml /etc/airlock/openbox-menu.xml
+COPY --from=shim_builder /out/hostshim /usr/local/bin/hostshim
+COPY --from=shim_builder /out/edualc-cmd-hook /usr/local/bin/edualc-cmd-hook
+RUN for tool in cargo rustc rustup just make git bun rg screencapture agy codex; do ln -sf /usr/local/bin/hostshim "/usr/local/bin/${tool}"; done \
+    && printf '\ncommand_not_found_handle() { /usr/local/bin/edualc-cmd-hook --not-found "$@"; echo "bash: $1: command not found" >&2; return 127; }\n' >> /etc/bash.bashrc
+COPY docker/edualc-desktop.html /usr/share/novnc/edualc-desktop.html
+COPY docker/clipboard-bridge.py /usr/local/bin/clipboard-bridge.py
+COPY docker/airlock-browser.sh /usr/local/bin/airlock-browser
+COPY docker/airlock-browser.desktop /usr/share/applications/airlock-browser.desktop
+COPY docker/desktop-entrypoint.sh /usr/local/bin/desktop-entrypoint.sh
+RUN chmod +x /usr/local/bin/airlock-browser /usr/local/bin/desktop-entrypoint.sh /usr/local/bin/clipboard-bridge.py \
+    && mkdir -p /etc/xdg \
+    && printf '[Default Applications]\nx-scheme-handler/http=airlock-browser.desktop\nx-scheme-handler/https=airlock-browser.desktop\ntext/html=airlock-browser.desktop\n' > /etc/xdg/mimeapps.list
+
+EXPOSE 6080 6081 6082
+ENTRYPOINT ["/usr/local/bin/desktop-entrypoint.sh"]

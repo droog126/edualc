@@ -1,0 +1,22 @@
+# Local secrets, runtime state, accounts, desktop sessions & proxy configs
+/.env
+/data/
+
+# Compiled binaries & build artifacts (anchored to repo root so cmd/* & internal/*/data stay tracked)
+/.bin/
+*.exe
+/gateway
+/relay
+/hostexec
+/hostshim
+/edualc-cmd-hook
+
+# Default local workspace mount (keep directory placeholder only)
+/workspace/*
+!/workspace/.gitkeep
+
+# Python & OS junk
+__pycache__/
+*.py[cod]
+.DS_Store
+Thumbs.db

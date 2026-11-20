@@ -1,0 +1,98 @@
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.gateway
+    container_name: mini-cage-gateway
+    restart: unless-stopped
+    environment:
+      GATEWAY_DATA_DIR: /data/gateway
+      RELAY_UPSTREAM: http://relay:8317
+      LOGIN_UPSTREAM: http://desktop:6080
+      TERMINAL_UPSTREAM: http://relay:7681
+      BROWSER_UPSTREAM: http://desktop:6081
+      CLIPBOARD_UPSTREAM: http://desktop:6082
+      HOSTEXEC_UPSTREAM: http://host.docker.internal:${HOSTEXEC_PORT:-8325}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-mini-cage-internal-change-me}
+      SUBSCRIPTION_URL: ${SUBSCRIPTION_URL:-}
+      LANDING_PROXY_URL: ${LANDING_PROXY_URL:-}
+      UPSTREAM_PROXY: ${UPSTREAM_PROXY:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:${HOST_PORT:-8317}:8317"
+      - "127.0.0.1:${DESKTOP_VNC_PORT:-8318}:8318"
+      - "127.0.0.1:${TERMINAL_PORT:-8319}:8319"
+      - "127.0.0.1:${BROWSER_VNC_PORT:-8320}:8320"
+    volumes:
+      - ./data/gateway:/data/gateway
+    networks:
+      - public_net
+      - cage_internal
+
+  relay:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.relay
+    container_name: mini-cage-relay
+    restart: unless-stopped
+    depends_on:
+      - gateway
+    environment:
+      RELAY_LISTEN_ADDR: ":8317"
+      RELAY_PROXY_URL: http://gateway:7890
+      RELAY_GATEWAY_CONTROL_URL: http://gateway:18080
+      HOSTEXEC_URL: http://gateway:18082/exec
+      HOSTEXEC_TOKEN: ${INTERNAL_TOKEN:-mini-cage-internal-change-me}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-mini-cage-internal-change-me}
+      RELAY_API_KEY: ${RELAY_API_KEY:-}
+      DEFAULT_MODEL: ${DEFAULT_MODEL:-sonnet}
+      EXIT_MODE: ${EXIT_MODE:-dynamic}
+      EXIT_SCOPE: ${EXIT_SCOPE:-any}
+      EXIT_COUNTRY: ${EXIT_COUNTRY:-}
+      EXIT_IP: ${EXIT_IP:-}
+      WORKSPACE_NAME: ${WORKSPACE_NAME:-project}
+      TMPDIR: /tmp/edualc
+      ACCOUNTS_DIR: /data/accounts
+      POLICY_FILE: /data/config/exit_policy.json
+      ENV_SYNC_FILE: /data/runtime/env_sync.json
+    volumes:
+      - ./data/accounts:/data/accounts
+      - ./data/config:/data/config
+      - ./data/runtime:/data/runtime
+      - ./data/shared-tmp:/tmp/edualc
+      - ${WORKSPACE_DIR:-./workspace}:/workspace/${WORKSPACE_NAME:-project}
+    networks:
+      - cage_internal
+
+  # 内置官方 Claude Desktop + 独立隔离 Chromium（独立于 relay 网络，改 relay 永不重启 desktop！）
+  desktop:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.desktop
+    container_name: mini-cage-desktop
+    restart: unless-stopped
+    shm_size: "1gb"
+    depends_on:
+      - gateway
+    environment:
+      PROXY_URL: http://gateway:7890
+      HOSTEXEC_URL: http://gateway:18082/exec
+      HOSTEXEC_TOKEN: ${INTERNAL_TOKEN:-mini-cage-internal-change-me}
+      WORKSPACE_NAME: ${WORKSPACE_NAME:-project}
+      TMPDIR: /tmp/edualc
+    volumes:
+      - ./data/desktop:/data/desktop
+      - ./data/runtime:/data/runtime
+      - ./data/shared-tmp:/tmp/edualc
+      - ${WORKSPACE_DIR:-./workspace}:/workspace/${WORKSPACE_NAME:-project}
+    # 独立挂载 internal: true 隔离内网：物理无公网路由、零直连泄露，且与 relay 生命周期完全解耦
+    networks:
+      - cage_internal
+
+networks:
+  public_net:
+    driver: bridge
+  cage_internal:
+    driver: bridge
+    internal: true

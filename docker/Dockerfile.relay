@@ -1,0 +1,41 @@
+FROM golang:1.25-bookworm AS builder
+WORKDIR /src
+ENV GOPROXY=https://goproxy.cn,direct
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/relay ./cmd/relay \
+    && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/hostshim ./cmd/hostshim \
+    && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/edualc-cmd-hook ./cmd/cmdhook
+
+FROM node:22-bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    tzdata \
+    locales \
+    jq \
+    && for loc in en_US.UTF-8 en_GB.UTF-8 en_CA.UTF-8 en_AU.UTF-8 en_NZ.UTF-8 en_IE.UTF-8 en_SG.UTF-8 en_IN.UTF-8 ja_JP.UTF-8 ko_KR.UTF-8 zh_TW.UTF-8 de_DE.UTF-8 de_CH.UTF-8 fr_FR.UTF-8 nl_NL.UTF-8 it_IT.UTF-8 es_ES.UTF-8 pt_BR.UTF-8 sv_SE.UTF-8 pl_PL.UTF-8; do \
+         sed -i "s/^# *${loc}/${loc}/" /etc/locale.gen; \
+       done \
+    && locale-gen \
+    && rm -rf /var/lib/apt/lists/* \
+    && npm install -g @anthropic-ai/claude-code \
+    && npm cache clean --force
+
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g; s|security.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || true \
+    && apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/* \
+    && ARCH="$(uname -m)" \
+    && curl -fsSL "https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.${ARCH}" -o /usr/local/bin/ttyd \
+    && chmod +x /usr/local/bin/ttyd
+COPY --from=builder /out/relay /usr/local/bin/relay
+COPY --from=builder /out/hostshim /usr/local/bin/hostshim
+COPY --from=builder /out/edualc-cmd-hook /usr/local/bin/edualc-cmd-hook
+RUN for tool in cargo rustc rustup just make git bun rg screencapture agy codex; do ln -sf /usr/local/bin/hostshim "/usr/local/bin/${tool}"; done \
+    && printf '\ncommand_not_found_handle() { /usr/local/bin/edualc-cmd-hook --not-found "$@"; echo "bash: $1: command not found" >&2; return 127; }\n' >> /etc/bash.bashrc
+COPY docker/claude-login.sh /usr/local/bin/claude-login
+COPY docker/airlock-shell.sh /usr/local/bin/airlock-shell.sh
+COPY docker/relay-entrypoint.sh /usr/local/bin/relay-entrypoint.sh
+RUN chmod +x /usr/local/bin/claude-login /usr/local/bin/airlock-shell.sh /usr/local/bin/relay-entrypoint.sh && mkdir -p /data/accounts /data/config /data/runtime /workspace
+
+EXPOSE 8317 7681
+ENTRYPOINT ["/usr/local/bin/relay-entrypoint.sh"]

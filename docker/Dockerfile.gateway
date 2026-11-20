@@ -1,0 +1,18 @@
+FROM golang:1.25-alpine AS builder
+WORKDIR /src
+ENV GOPROXY=https://goproxy.cn,direct
+COPY go.mod go.sum ./
+RUN go mod download
+COPY cmd/gateway ./cmd/gateway
+COPY internal/mihomo ./internal/mihomo
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/gateway ./cmd/gateway
+
+FROM metacubex/mihomo:latest AS mihomo_bin
+
+FROM alpine:3.21
+RUN apk add --no-cache ca-certificates tzdata
+COPY --from=mihomo_bin /mihomo /usr/local/bin/mihomo
+COPY --from=builder /out/gateway /usr/local/bin/gateway
+RUN mkdir -p /data/gateway
+EXPOSE 7890 8317 8318 18080
+ENTRYPOINT ["/usr/local/bin/gateway"]

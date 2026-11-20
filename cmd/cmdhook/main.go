@@ -1,0 +1,269 @@
+package main
+
+import (
+	"encoding/json"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+)
+
+const (
+	logPath    = "/data/runtime/unproxied_cmds.jsonl"
+	shimTarget = "/usr/local/bin/hostshim"
+)
+
+var trivialBuiltins = map[string]bool{
+	"cd": true, "echo": true, "printf": true, "ls": true, "ll": true, "cat": true,
+	"head": true, "tail": true, "wc": true, "pwd": true, "mkdir": true, "rm": true,
+	"rmdir": true, "cp": true, "mv": true, "touch": true, "chmod": true, "chown": true,
+	"ln": true, "export": true, "set": true, "unset": true, "local": true, "declare": true,
+	"readonly": true, "source": true, ".": true, "true": true, "false": true, "test": true,
+	"[": true, "[[": true, "sh": true, "bash": true, "zsh": true, "dash": true, "env": true,
+	"which": true, "type": true, "command": true, "builtin": true, "exec": true, "eval": true,
+	"exit": true, "return": true, "sleep": true, "date": true, "sed": true, "awk": true,
+	"grep": true, "egrep": true, "fgrep": true, "sort": true, "uniq": true, "cut": true,
+	"tr": true, "xargs": true, "tee": true, "find": true, "basename": true, "dirname": true,
+	"readlink": true, "realpath": true, "stat": true, "file": true, "diff": true, "cmp": true,
+	"ps": true, "kill": true, "pkill": true, "pgrep": true, "wait": true, "nohup": true,
+	"timeout": true, "yes": true, "seq": true, "for": true, "while": true, "until": true,
+	"if": true, "then": true, "else": true, "elif": true, "fi": true, "do": true, "done": true,
+	"case": true, "esac": true, "in": true, "function": true, "time": true, "!": true,
+	"{": true, "}": true, "umask": true, "claude": true, "hostshim": true, "edualc-cmd-hook": true,
+}
+
+var (
+	envAssignRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
+	validBinRe  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,48}$`)
+	heredocRe   = regexp.MustCompile(`<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?`)
+	durationRe  = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?[smhd]?$`)
+)
+
+type record struct {
+	TS      string `json:"ts"`
+	Bin     string `json:"bin"`
+	Cmd     string `json:"cmd"`
+	Cwd     string `json:"cwd"`
+	Missing bool   `json:"missing"`
+	Source  string `json:"source"`
+}
+
+func isProxied(binName string) bool {
+	p, err := exec.LookPath(binName)
+	if err != nil {
+		return false
+	}
+	real, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return false
+	}
+	return real == shimTarget
+}
+
+// stripHeredocs removes heredoc bodies (e.g. <<'EOF' ... EOF) while preserving the command line itself.
+func stripHeredocs(s string) string {
+	lines := strings.Split(s, "\n")
+	var out []string
+	var pendingDelims []string
+	for _, line := range lines {
+		if len(pendingDelims) > 0 {
+			if strings.TrimSpace(line) == pendingDelims[0] {
+				pendingDelims = pendingDelims[1:]
+			}
+			continue
+		}
+		out = append(out, line)
+		for _, m := range heredocRe.FindAllStringSubmatch(line, -1) {
+			if len(m) >= 2 && m[1] != "" {
+				pendingDelims = append(pendingDelims, m[1])
+			}
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// splitShellSegments splits a shell command on unquoted &&, ||, |, ;, and newlines.
+func splitShellSegments(s string) []string {
+	s = stripHeredocs(s)
+	var segs []string
+	var cur strings.Builder
+	inSingle := false
+	inDouble := false
+	escaped := false
+
+	flush := func() {
+		if seg := strings.TrimSpace(cur.String()); seg != "" {
+			segs = append(segs, seg)
+		}
+		cur.Reset()
+	}
+
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if escaped {
+			cur.WriteByte(ch)
+			escaped = false
+			continue
+		}
+		if ch == '\\' && !inSingle {
+			cur.WriteByte(ch)
+			escaped = true
+			continue
+		}
+		if ch == '\'' && !inDouble {
+			inSingle = !inSingle
+			cur.WriteByte(ch)
+			continue
+		}
+		if ch == '"' && !inSingle {
+			inDouble = !inDouble
+			cur.WriteByte(ch)
+			continue
+		}
+		if !inSingle && !inDouble {
+			if ch == ';' || ch == '\n' {
+				flush()
+				continue
+			}
+			if ch == '|' {
+				if i+1 < len(s) && s[i+1] == '|' {
+					i++
+				}
+				flush()
+				continue
+			}
+			if ch == '&' && i+1 < len(s) && s[i+1] == '&' {
+				i++
+				flush()
+				continue
+			}
+		}
+		cur.WriteByte(ch)
+	}
+	flush()
+	return segs
+}
+
+func extractCommands(cmdline string) []string {
+	var out []string
+	for _, seg := range splitShellSegments(cmdline) {
+		if seg == "" || strings.HasPrefix(seg, "#") {
+			continue
+		}
+		fields := strings.Fields(seg)
+		skipNextDuration := false
+		for _, tok := range fields {
+			tok = strings.Trim(tok, `"'()`)
+			if tok == "" || envAssignRe.MatchString(tok) {
+				continue
+			}
+			if skipNextDuration {
+				skipNextDuration = false
+				if durationRe.MatchString(tok) || strings.HasPrefix(tok, "-") {
+					continue
+				}
+			}
+			if tok == "timeout" {
+				skipNextDuration = true
+				continue
+			}
+			if tok == "sudo" || tok == "env" || tok == "nohup" || tok == "time" || tok == "command" {
+				continue
+			}
+			if strings.HasPrefix(tok, "-") || strings.ContainsAny(tok, "*?[]$<>") {
+				break
+			}
+			base := filepath.Base(tok)
+			if !trivialBuiltins[base] && validBinRe.MatchString(base) {
+				out = append(out, base)
+			}
+			break
+		}
+	}
+	return out
+}
+
+func appendRecord(rec record) {
+	_ = os.MkdirAll(filepath.Dir(logPath), 0o755)
+	b, err := json.Marshal(rec)
+	if err != nil {
+		return
+	}
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o666)
+	if err != nil {
+		return
+	}
+	_, _ = f.Write(append(b, '\n'))
+	_ = f.Close()
+}
+
+func main() {
+	if len(os.Args) >= 3 && os.Args[1] == "--not-found" {
+		binName := filepath.Base(os.Args[2])
+		full := strings.Join(os.Args[2:], " ")
+		if validBinRe.MatchString(binName) && !isProxied(binName) {
+			cwd, _ := os.Getwd()
+			appendRecord(record{
+				TS: time.Now().UTC().Format(time.RFC3339), Bin: binName,
+				Cmd: truncate(full, 300), Cwd: cwd, Missing: true, Source: "not_found",
+			})
+		}
+		return
+	}
+
+	raw, err := io.ReadAll(io.LimitReader(os.Stdin, 256<<10))
+	if err != nil || len(raw) == 0 {
+		return
+	}
+	var hookInput struct {
+		ToolName  string `json:"tool_name"`
+		Cwd       string `json:"cwd"`
+		ToolInput struct {
+			Command string `json:"command"`
+		} `json:"tool_input"`
+	}
+	if json.Unmarshal(raw, &hookInput) != nil {
+		return
+	}
+	if hookInput.ToolName != "" && !strings.EqualFold(hookInput.ToolName, "bash") {
+		return
+	}
+	cmdline := strings.TrimSpace(hookInput.ToolInput.Command)
+	if cmdline == "" {
+		return
+	}
+	cwd := hookInput.Cwd
+	if cwd == "" {
+		cwd, _ = os.Getwd()
+	}
+
+	seen := make(map[string]bool)
+	for _, binName := range extractCommands(cmdline) {
+		if seen[binName] {
+			continue
+		}
+		seen[binName] = true
+		if isProxied(binName) {
+			continue
+		}
+		_, lookErr := exec.LookPath(binName)
+		appendRecord(record{
+			TS:      time.Now().UTC().Format(time.RFC3339),
+			Bin:     binName,
+			Cmd:     truncate(cmdline, 300),
+			Cwd:     cwd,
+			Missing: lookErr != nil,
+			Source:  "claude_hook",
+		})
+	}
+}
+
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
+}

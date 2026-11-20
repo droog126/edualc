@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>edualc</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23191816'/%3E%3Cg transform='translate(32,0) scale(-1,1)' stroke='%23d97757' stroke-width='2.1' stroke-linecap='round'%3E%3Cline x1='16' y1='6' x2='16' y2='26'/%3E%3Cline x1='6' y1='16' x2='26' y2='16'/%3E%3Cline x1='9.2' y1='8.6' x2='22.8' y2='23.4'/%3E%3Cline x1='23.2' y1='9.4' x2='8.8' y2='22.6'/%3E%3Cline x1='12.2' y1='6.7' x2='19.8' y2='25.3'/%3E%3Cline x1='6.8' y1='12.4' x2='25.2' y2='19.6'/%3E%3C/g%3E%3Ccircle cx='16' cy='16' r='2.4' fill='%23191816'/%3E%3C/svg%3E" />
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    overflow: hidden; background: #181715;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  #screen {
+    width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+    background: #181715;
+  }
+  .hud {
+    position: fixed; bottom: 10px; right: 12px; z-index: 50;
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 8px; border-radius: 9px;
+    background: rgba(25, 24, 22, 0.84); backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #f1efe9; font-size: 12px;
+    opacity: 0.38; transition: opacity 0.18s ease;
+  }
+  .hud:hover, .hud.show { opacity: 1; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #a66a16; }
+  .dot.ok { background: #2dd47e; }
+  .dot.fail { background: #ff5c6c; }
+  .hud button {
+    border: 1px solid rgba(255,255,255,0.16); background: rgba(255,255,255,0.08);
+    color: #f1efe9; border-radius: 6px; padding: 3px 8px; font-size: 11.5px; cursor: pointer;
+  }
+  .hud button:hover { background: rgba(255,255,255,0.18); }
+  .hud button.accent { background: #c96442; border-color: #c96442; color: #fff; }
+  .hud button.accent:hover { background: #b55534; }
+  .sep { color: rgba(255,255,255,0.22); }
+
+  /* Floating Native Host Chinese IME Bar */
+  .ime-dock {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    z-index: 65; width: min(640px, 92vw);
+    background: rgba(25, 24, 22, 0.94); backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 12px;
+    padding: 8px 10px; box-shadow: 0 12px 36px rgba(0, 0, 0, 0.48);
+    display: none; flex-direction: column; gap: 6px;
+  }
+  .ime-dock.open { display: flex; }
+  .ime-row { display: flex; align-items: flex-end; gap: 8px; }
+  .ime-input {
+    flex: 1; min-height: 36px; max-height: 120px; resize: none;
+    background: #11100e; color: #f5f3ee;
+    border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 8px;
+    padding: 8px 10px; font-size: 13.5px; line-height: 1.4;
+    font-family: inherit; outline: none;
+  }
+  .ime-input:focus { border-color: #c96442; }
+  .ime-meta {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 11.5px; color: #9e9a90; gap: 8px; flex-wrap: wrap;
+  }
+  .ime-meta label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; color: #d6d2c8; }
+
+  .toast {
+    position: fixed; bottom: 16px; right: 16px; z-index: 70;
+    background: rgba(25, 24, 22, 0.92); color: #f1efe9;
+    border: 1px solid rgba(255,255,255,0.14); border-radius: 8px;
+    padding: 7px 12px; font-size: 12px; opacity: 0; pointer-events: none;
+    transition: opacity 0.16s ease;
+  }
+  .toast.show { opacity: 1; }
+
+  .clip-modal {
+    position: fixed; inset: 0; z-index: 80; display: none; place-items: center;
+    background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(4px);
+  }
+  .clip-modal.open { display: grid; }
+  .clip-box {
+    width: 420px; max-width: 92vw; background: #1e1d1a; color: #f1efe9;
+    border: 1px solid rgba(255,255,255,0.14); border-radius: 11px; padding: 14px;
+  }
+  .clip-box textarea {
+    width: 100%; height: 110px; box-sizing: border-box; margin: 8px 0;
+    background: #141311; color: #f1efe9; border: 1px solid rgba(255,255,255,0.16);
+    border-radius: 7px; padding: 8px; font-size: 13px; resize: vertical;
+  }
+</style>
+</head>
+<body>
+  <div id="screen"></div>
+
+  <div id="hud" class="hud show">
+    <span id="dot" class="dot"></span>
+    <span id="status">连接中...</span>
+    <span class="sep">|</span>
+    <button class="accent" onclick="toggleIMEDock()" title="使用宿主机原生中文输入法（快捷键 Option/Alt + Space）">中文输入 (⌥Space)</button>
+    <button onclick="openClipModal()" title="手动粘贴或读取容器剪贴板">剪贴板</button>
+    <button onclick="toggleFS()">全屏</button>
+  </div>
+
+  <!-- Native Host Chinese Input Bar -->
+  <div id="imeDock" class="ime-dock">
+    <div class="ime-row">
+      <textarea id="imeInput" class="ime-input" rows="1" placeholder="直接用本机搜狗/苹果/微软中文输入法打字，回车上屏到光标处（Shift+Enter 换行，Esc 关闭）"></textarea>
+      <button onclick="commitIME(false)" style="height:36px;padding:0 12px;border-radius:8px;border:0;background:#c96442;color:#fff;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap">上屏</button>
+      <button onclick="closeIMEDock()" style="height:36px;padding:0 9px;border-radius:8px;border:1px solid rgba(255,255,255,.16);background:transparent;color:#bbb;font-size:12px;cursor:pointer">收起</button>
+    </div>
+    <div class="ime-meta">
+      <span>先点一下目标输入框再按 <strong>⌥/Alt + Space</strong> 唤出（支持任意中文、标点、Emoji）</span>
+      <label><input type="checkbox" id="imeAutoEnter" /> <span>上屏后自动按 Enter 发送</span></label>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <div id="clipModal" class="clip-modal" onclick="if(event.target===this)closeClipModal()">
+    <div class="clip-box">
+      <div style="font-weight:600;font-size:13.5px">UTF-8 双向剪贴板</div>
+      <div style="font-size:12px;color:#9e9a90;margin-top:2px">直接按 Cmd/Ctrl+C/V 可自动同步；此处可手动查看或粘贴</div>
+      <textarea id="clipText" placeholder="粘贴任意中英文文本..."></textarea>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="pullContainerClip()" style="padding:5px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.08);color:#f1efe9;cursor:pointer">读取容器剪贴板</button>
+        <button onclick="pushModalClip()" style="padding:5px 10px;border-radius:6px;border:0;background:#c96442;color:#fff;cursor:pointer">发送到容器并粘贴</button>
+        <button onclick="closeClipModal()" style="padding:5px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.16);background:transparent;color:#ccc;cursor:pointer">关闭</button>
+      </div>
+    </div>
+  </div>
+
+<script type="module">
+import RFB from './core/rfb.js';
+
+const screenEl = document.getElementById('screen');
+const dotEl = document.getElementById('dot');
+const statusEl = document.getElementById('status');
+const hudEl = document.getElementById('hud');
+const toastEl = document.getElementById('toast');
+const imeDock = document.getElementById('imeDock');
+const imeInput = document.getElementById('imeInput');
+const imeAutoEnter = document.getElementById('imeAutoEnter');
+
+const basePath = location.pathname.replace(/\/[^/]*$/, '');
+const isBrowser = basePath.endsWith('/browser') || location.port === '8320';
+const displayID = isBrowser ? '79' : '78';
+const clipEndpoint = (location.port === '8318' || location.port === '8320')
+  ? `http://127.0.0.1:8317/clipboard?display=${displayID}`
+  : `/clipboard?display=${displayID}`;
+
+let rfb = null;
+let reconnectTimer = null;
+let toastTimer = null;
+let lastContainerClip = '';
+
+function notify(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1800);
+}
+
+function setStatus(state, text) {
+  dotEl.className = 'dot ' + state;
+  statusEl.textContent = text;
+  if (state === 'ok') setTimeout(() => hudEl.classList.remove('show'), 3000);
+  else hudEl.classList.add('show');
+}
+
+function sendCtrlKey(keysym, code) {
+  if (!rfb) return;
+  rfb.sendKey(0xffeb, 'MetaLeft', false);
+  rfb.sendKey(0xffec, 'MetaRight', false);
+  rfb.sendKey(0xffe9, 'AltLeft', false);
+  rfb.sendKey(0xffea, 'AltRight', false);
+  const XK_Control_L = 0xffe3;
+  rfb.sendKey(XK_Control_L, 'ControlLeft', true);
+  setTimeout(() => {
+    rfb.sendKey(keysym, code, true);
+    rfb.sendKey(keysym, code, false);
+    rfb.sendKey(XK_Control_L, 'ControlLeft', false);
+  }, 20);
+}
+
+function sendEnterKey() {
+  if (!rfb) return;
+  rfb.sendKey(0xff0d, 'Enter', true);
+  rfb.sendKey(0xff0d, 'Enter', false);
+}
+
+async function pushTextToContainer(text, sendPasteKey, alsoPressEnter = false) {
+  if (typeof text !== 'string' || !text.length) return false;
+  lastContainerClip = text;
+  try {
+    const res = await fetch(clipEndpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      body: text,
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+  } catch {
+    if (rfb) rfb.clipboardPasteFrom(text);
+  }
+  if (sendPasteKey) {
+    setTimeout(() => {
+      sendCtrlKey(0x0076, 'KeyV');
+      if (alsoPressEnter) {
+        setTimeout(sendEnterKey, 120);
+      }
+    }, 50);
+  }
+  return true;
+}
+
+async function copyToHostClipboard(text) {
+  if (!text) return false;
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      ta.remove();
+      return ok;
+    } catch { return false; }
+  }
+}
+
+async function pullFromContainerToHost(showToast = false) {
+  try {
+    const res = await fetch(clipEndpoint, { cache: 'no-store' });
+    if (!res.ok) return '';
+    const text = await res.text();
+    if (text && text !== lastContainerClip) {
+      lastContainerClip = text;
+      const ok = await copyToHostClipboard(text);
+      if (showToast && ok) notify('已复制到本机剪贴板');
+    } else if (showToast && text) {
+      await copyToHostClipboard(text);
+      notify('已复制到本机剪贴板');
+    }
+    return text;
+  } catch {
+    return '';
+  }
+}
+
+async function pasteFromHostToContainer() {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (text) {
+      await pushTextToContainer(text, true);
+      return;
+    }
+  } catch {
+    openClipModal();
+    notify('请在此框按 Cmd/Ctrl+V 粘贴');
+    return;
+  }
+  sendCtrlKey(0x0076, 'KeyV');
+}
+
+// ---- Native Host Chinese IME Dock ----
+function openIMEDock() {
+  imeDock.classList.add('open');
+  setTimeout(() => imeInput.focus(), 10);
+}
+window.closeIMEDock = () => {
+  imeDock.classList.remove('open');
+  rfb?.focus();
+};
+window.toggleIMEDock = () => {
+  if (imeDock.classList.contains('open')) closeIMEDock();
+  else openIMEDock();
+};
+window.commitIME = async (keepOpen = false) => {
+  const txt = imeInput.value;
+  if (!txt) {
+    if (!keepOpen) closeIMEDock();
+    return;
+  }
+  const autoSend = imeAutoEnter.checked;
+  imeInput.value = '';
+  imeInput.style.height = 'auto';
+  if (!keepOpen) imeDock.classList.remove('open');
+  rfb?.focus();
+  await pushTextToContainer(txt, true, autoSend);
+  if (keepOpen) setTimeout(() => imeInput.focus(), 160);
+};
+
+imeInput.addEventListener('input', () => {
+  imeInput.style.height = 'auto';
+  imeInput.style.height = Math.min(imeInput.scrollHeight, 120) + 'px';
+});
+imeInput.addEventListener('keydown', (e) => {
+  if (e.isComposing || e.keyCode === 229) return;
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    closeIMEDock();
+    return;
+  }
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    window.commitIME(false);
+  }
+});
+
+// ---- Fallback Clipboard Modal ----
+window.openClipModal = () => {
+  document.getElementById('clipModal').classList.add('open');
+  document.getElementById('clipText').focus();
+};
+window.closeClipModal = () => {
+  document.getElementById('clipModal').classList.remove('open');
+  rfb?.focus();
+};
+window.pullContainerClip = async () => {
+  const txt = await pullFromContainerToHost(true);
+  document.getElementById('clipText').value = txt;
+};
+window.pushModalClip = async () => {
+  const txt = document.getElementById('clipText').value;
+  closeClipModal();
+  await pushTextToContainer(txt, true);
+  notify('已粘贴到容器');
+};
+window.toggleFS = () => {
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+  else document.exitFullscreen?.();
+};
+
+function connect() {
+  clearTimeout(reconnectTimer);
+  setStatus('', '连接画面中...');
+  const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+  const wsPath = (basePath && basePath !== '/') ? `${basePath}/websockify` : '/websockify';
+  const wsUrl = proto + location.host + wsPath;
+
+  rfb = new RFB(screenEl, wsUrl, { shared: true });
+  rfb.scaleViewport = true;
+  rfb.resizeSession = true;
+  rfb.clipViewport = false;
+  rfb.background = '#181715';
+
+  rfb.addEventListener('connect', () => {
+    setStatus('ok', '已连接');
+    rfb.focus();
+  });
+
+  rfb.addEventListener('disconnect', () => {
+    setStatus('fail', '连接断开，重连中...');
+    reconnectTimer = setTimeout(connect, 2000);
+  });
+
+  rfb.addEventListener('clipboard', () => {
+    pullFromContainerToHost(false);
+  });
+}
+
+window.addEventListener('paste', (e) => {
+  if (document.getElementById('clipModal').classList.contains('open')) return;
+  if (imeDock.classList.contains('open') && document.activeElement === imeInput) return;
+  const text = e.clipboardData?.getData('text/plain');
+  if (text) {
+    e.preventDefault();
+    pushTextToContainer(text, true);
+  }
+}, true);
+
+screenEl.addEventListener('mouseup', () => {
+  setTimeout(() => pullFromContainerToHost(false), 280);
+});
+
+const isMac = /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent);
+window.addEventListener('keydown', (e) => {
+  // Option+Space (Mac) / Alt+Space (Win) toggles native host Chinese IME bar from anywhere!
+  if (e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'Space') {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleIMEDock();
+    return;
+  }
+  if (document.getElementById('clipModal').classList.contains('open')) return;
+  if (imeDock.classList.contains('open') && document.activeElement === imeInput) return;
+  if (!rfb) return;
+
+  if (isMac && (e.key === 'Meta' || e.code === 'MetaLeft' || e.code === 'MetaRight')) {
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
+  const mod = isMac ? (e.metaKey && !e.ctrlKey) : (e.ctrlKey && !e.metaKey);
+  if (!mod || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'v') {
+    e.preventDefault();
+    e.stopPropagation();
+    pasteFromHostToContainer();
+    return;
+  }
+  if (k === 'c' || k === 'x') {
+    e.preventDefault();
+    e.stopPropagation();
+    sendCtrlKey(k === 'c' ? 0x0063 : 0x0078, k === 'c' ? 'KeyC' : 'KeyX');
+    setTimeout(() => pullFromContainerToHost(true), 160);
+    return;
+  }
+  if (isMac) {
+    const map = { a: [0x0061, 'KeyA'], z: [0x007a, 'KeyZ'], t: [0x0074, 'KeyT'], w: [0x0077, 'KeyW'], l: [0x006c, 'KeyL'], r: [0x0072, 'KeyR'], f: [0x0066, 'KeyF'] };
+    if (map[k]) {
+      e.preventDefault();
+      e.stopPropagation();
+      sendCtrlKey(map[k][0], map[k][1]);
+    }
+  }
+}, true);
+
+window.addEventListener('keyup', (e) => {
+  if (isMac && (e.key === 'Meta' || e.code === 'MetaLeft' || e.code === 'MetaRight')) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+}, true);
+
+connect();
+</script>
+</body>
+</html>

@@ -1,0 +1,1880 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>edualc</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23191816'/%3E%3Cg transform='translate(32,0) scale(-1,1)' stroke='%23d97757' stroke-width='2.1' stroke-linecap='round'%3E%3Cline x1='16' y1='6' x2='16' y2='26'/%3E%3Cline x1='6' y1='16' x2='26' y2='16'/%3E%3Cline x1='9.2' y1='8.6' x2='22.8' y2='23.4'/%3E%3Cline x1='23.2' y1='9.4' x2='8.8' y2='22.6'/%3E%3Cline x1='12.2' y1='6.7' x2='19.8' y2='25.3'/%3E%3Cline x1='6.8' y1='12.4' x2='25.2' y2='19.6'/%3E%3C/g%3E%3Ccircle cx='16' cy='16' r='2.4' fill='%23191816'/%3E%3C/svg%3E" />
+<style>
+  :root {
+    --sidebar: #f1efe9;
+    --canvas: #faf9f6;
+    --surface: #ffffff;
+    --surface-subtle: #f5f3ee;
+    --line: rgba(24, 22, 19, 0.085);
+    --line-strong: rgba(24, 22, 19, 0.16);
+    --ink: #191816;
+    --ink-2: #5d5a53;
+    --ink-3: #8e897f;
+    --accent: #c96442;
+    --accent-hover: #b65535;
+    --accent-wash: rgba(201, 100, 66, 0.09);
+    --ok: #26734d;
+    --ok-wash: rgba(38, 115, 77, 0.09);
+    --fail: #b83b32;
+    --fail-wash: rgba(184, 59, 50, 0.09);
+    --warn: #a66a16;
+    --warn-wash: rgba(166, 106, 22, 0.1);
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    --serif: "New York", "Iowan Old Style", Georgia, "Songti SC", serif;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: var(--sans);
+    background: var(--canvas);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    font-size: 13.5px;
+    line-height: 1.5;
+  }
+
+  .shell {
+    display: grid;
+    grid-template-columns: 232px minmax(0, 1fr);
+    min-height: 100vh;
+  }
+  @media (max-width: 820px) {
+    .shell { grid-template-columns: 1fr; }
+    .sidebar { border-right: 0 !important; border-bottom: 1px solid var(--line); }
+  }
+
+  /* Sidebar */
+  .sidebar {
+    background: var(--sidebar);
+    border-right: 1px solid var(--line);
+    padding: 20px 14px 16px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 20px;
+  }
+  .brand {
+    padding: 4px 10px 16px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .brand-mark {
+    width: 28px; height: 28px; border-radius: 7px;
+    background: var(--ink);
+    display: grid; place-items: center; flex-shrink: 0;
+    box-shadow: 0 1px 3px rgba(25, 24, 22, 0.18);
+  }
+  .brand-mark svg { width: 20px; height: 20px; display: block; }
+  .brand-name { font-size: 14.5px; font-weight: 650; letter-spacing: -0.02em; }
+  .brand-ver { font-size: 11px; color: var(--ink-3); font-family: var(--mono); }
+
+  .nav { display: flex; flex-direction: column; gap: 2px; }
+  .nav-btn {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    padding: 8px 10px; border: 0; border-radius: 8px;
+    background: transparent; color: var(--ink-2);
+    font-size: 13.5px; font-weight: 500; cursor: pointer;
+    text-align: left; transition: background 0.12s, color 0.12s;
+  }
+  .nav-btn svg { width: 15px; height: 15px; stroke: currentColor; stroke-width: 1.75; fill: none; flex-shrink: 0; }
+  .nav-btn:hover { background: rgba(25, 24, 22, 0.045); color: var(--ink); }
+  .nav-btn.active {
+    background: var(--surface); color: var(--ink); font-weight: 600;
+    box-shadow: 0 1px 2px rgba(25, 24, 22, 0.06), 0 0 0 1px var(--line);
+  }
+  .nav-count {
+    margin-left: auto; font-family: var(--mono); font-size: 11px;
+    color: var(--ink-3);
+  }
+
+  .side-foot {
+    padding: 12px 11px; border-radius: 10px;
+    background: rgba(255, 255, 255, 0.65); border: 1px solid var(--line);
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .side-status { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .dot.ok { background: var(--ok); }
+  .dot.fail { background: var(--fail); }
+  .dot.warn { background: var(--warn); }
+  .side-meta { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); line-height: 1.45; }
+  .side-node { font-size: 11.5px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Main Area */
+  .main { padding: 28px 36px 56px; max-width: 1480px; width: 100%; }
+  .main.wide { max-width: none; padding: 18px 24px 22px; display: flex; flex-direction: column; height: 100vh; }
+  @media (max-width: 820px) { .main { padding: 20px 16px 44px; } .main.wide { height: auto; } }
+
+  /* Balanced 2-column desktop split for wide screens */
+  .split-2 {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    gap: 18px;
+    align-items: start;
+  }
+  .split-2.wide-left {
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.85fr);
+  }
+  @media (max-width: 1120px) {
+    .split-2, .split-2.wide-left { grid-template-columns: 1fr; }
+  }
+  .sheet-scroll { max-height: 540px; overflow-y: auto; }
+  .split-2 .ledger-row { grid-template-columns: 126px minmax(0, 1fr) auto; gap: 10px; padding: 9px 14px; }
+  .clamp-2 {
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden; word-break: break-all;
+  }
+
+  .embed-shell {
+    flex: 1; min-height: 640px; width: 100%;
+    border: 1px solid var(--line-strong); border-radius: 10px;
+    overflow: hidden; background: #181715;
+    box-shadow: 0 2px 12px rgba(25, 24, 22, 0.06);
+  }
+  .embed-frame { width: 100%; height: 100%; min-height: 640px; border: 0; display: block; }
+
+  .view { display: none; }
+  .view.active { display: block; }
+
+  .page-head {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    gap: 16px; padding-bottom: 20px; border-bottom: 1px solid var(--line);
+    margin-bottom: 24px; flex-wrap: wrap;
+  }
+  .page-title {
+    margin: 0; font-family: var(--serif); font-size: 25px; font-weight: 600;
+    letter-spacing: -0.025em; line-height: 1.2;
+  }
+  .page-sub { margin: 5px 0 0; font-size: 13px; color: var(--ink-2); }
+
+  /* Key-value telemetry strip */
+  .kv-strip {
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1px; background: var(--line);
+    border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+    margin-bottom: 24px;
+  }
+  @media (max-width: 720px) { .kv-strip { grid-template-columns: repeat(2, 1fr); } }
+  .kv { background: var(--surface); padding: 13px 15px; }
+  .kv-label { font-size: 11px; color: var(--ink-3); letter-spacing: 0.02em; }
+  .kv-val {
+    font-size: 14px; font-weight: 600; margin-top: 4px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .kv-val.mono { font-family: var(--mono); font-size: 13px; }
+  .kv-sub { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Notice bar */
+  .alert {
+    padding: 11px 14px; border-radius: 9px; margin-bottom: 20px;
+    font-size: 13px; display: none; align-items: center; gap: 10px;
+  }
+  .alert.fail { display: flex; background: var(--fail-wash); color: var(--fail); border: 1px solid rgba(184, 59, 50, 0.22); }
+
+  /* Sheet / List Container */
+  .sheet {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 11px; overflow: hidden; margin-bottom: 20px;
+  }
+  .sheet-head {
+    padding: 12px 16px; border-bottom: 1px solid var(--line);
+    background: var(--surface-subtle);
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  }
+  .sheet-title { font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
+  .sheet-body { padding: 16px; }
+
+  /* Audit Ledger Rows */
+  .ledger-row {
+    display: grid; grid-template-columns: 185px minmax(0, 1fr) 62px;
+    gap: 14px; align-items: baseline;
+    padding: 11px 16px; border-bottom: 1px solid var(--line);
+    transition: background 0.1s;
+  }
+  .ledger-row:last-child { border-bottom: 0; }
+  .ledger-row:hover { background: rgba(25, 24, 22, 0.018); }
+  @media (max-width: 680px) { .ledger-row { grid-template-columns: 1fr auto; } .ledger-ev { grid-column: 1 / -1; } }
+  .ledger-name { font-weight: 550; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  .ledger-ev { font-size: 12.5px; color: var(--ink-2); word-break: break-word; }
+  .ledger-rem { font-size: 12px; color: var(--warn); margin-top: 3px; }
+  .tag {
+    display: inline-flex; justify-content: center; align-items: center;
+    padding: 2px 8px; border-radius: 5px; font-size: 11.5px; font-weight: 600;
+  }
+  .tag.ok { background: var(--ok-wash); color: var(--ok); }
+  .tag.fail { background: var(--fail-wash); color: var(--fail); }
+  .tag.warn { background: var(--warn-wash); color: var(--warn); }
+  .tag.muted { background: var(--surface-subtle); color: var(--ink-2); }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    height: 32px; padding: 0 12px; border-radius: 7px;
+    border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink);
+    font-size: 12.5px; font-weight: 550; cursor: pointer; text-decoration: none;
+    white-space: nowrap; flex-shrink: 0;
+    transition: background 0.12s, border-color 0.12s;
+  }
+  .btn:hover { background: var(--surface-subtle); border-color: rgba(24, 22, 19, 0.28); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .btn.primary { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .btn.primary:hover { background: #2f2d2a; }
+  .btn.accent { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.accent:hover { background: var(--accent-hover); }
+  .btn.sm { height: 27px; padding: 0 9px; font-size: 12px; }
+
+  /* Form controls */
+  input, select, textarea {
+    width: 100%; background: var(--surface); color: var(--ink);
+    border: 1px solid var(--line-strong); border-radius: 7px;
+    padding: 7px 10px; font-size: 13px; font-family: inherit; outline: none;
+    transition: border-color 0.12s;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--ink); }
+  textarea { min-height: 76px; font-family: var(--mono); font-size: 12px; resize: vertical; }
+  label { display: block; font-size: 12px; color: var(--ink-2); margin: 11px 0 4px; font-weight: 500; }
+
+  /* Node Table */
+  .node-tools {
+    padding: 10px 14px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
+  .node-scroll { max-height: 360px; overflow-y: auto; }
+  .node-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    width: 100%; border: 0; border-bottom: 1px solid var(--line);
+    background: var(--surface); padding: 10px 16px; cursor: pointer;
+    text-align: left; color: var(--ink); transition: background 0.1s;
+  }
+  .node-row:last-child { border-bottom: 0; }
+  .node-row:hover { background: var(--surface-subtle); }
+  .node-row.active { background: var(--accent-wash); }
+  .node-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .node-check { width: 14px; height: 14px; color: var(--accent); flex-shrink: 0; display: grid; place-items: center; }
+  .node-title { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .node-row.active .node-title { font-weight: 650; }
+  .ping { font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink-3); flex-shrink: 0; }
+  .ping.fast { color: var(--ok); }
+  .ping.med { color: var(--warn); }
+  .ping.slow { color: var(--fail); }
+
+  /* Accounts */
+  .acc-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 13px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap;
+  }
+  .acc-row:last-child { border-bottom: 0; }
+  .acc-name { font-weight: 600; font-size: 13.5px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .acc-meta { font-size: 12px; color: var(--ink-3); margin-top: 2px; font-family: var(--mono); }
+  .quota-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line);
+    width: 100%;
+  }
+  .quota-item { display: flex; flex-direction: column; gap: 4px; }
+  .quota-head { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--ink-2); }
+  .quota-bar { height: 5px; border-radius: 99px; background: var(--sidebar); overflow: hidden; }
+  .quota-fill { height: 100%; border-radius: 99px; background: var(--ok); transition: width 0.25s ease; }
+  .quota-fill.warn { background: var(--warn); }
+  .quota-fill.fail { background: var(--fail); }
+  .quota-reset { font-size: 11px; color: var(--ink-3); font-family: var(--mono); }
+
+  .cmd-line {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    background: var(--surface-subtle); border: 1px solid var(--line);
+    border-radius: 8px; padding: 9px 12px; font-family: var(--mono); font-size: 12px; color: var(--ink);
+  }
+
+  /* Claude-style Chat */
+  .chat-stream {
+    min-height: 300px; max-height: 400px; overflow-y: auto;
+    padding: 20px; display: flex; flex-direction: column; gap: 16px;
+  }
+  .msg { max-width: 85%; line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
+  .msg.user {
+    align-self: flex-end; background: var(--sidebar); border: 1px solid var(--line);
+    padding: 9px 14px; border-radius: 14px 14px 4px 14px; font-size: 13.5px;
+  }
+  .msg.ai {
+    align-self: flex-start; font-family: var(--serif); font-size: 14.5px; color: var(--ink);
+    padding: 2px 4px;
+  }
+  .msg.hint { align-self: center; font-size: 12.5px; color: var(--ink-3); }
+  .composer {
+    border-top: 1px solid var(--line); padding: 12px 14px;
+    background: var(--surface-subtle);
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 680px) { .grid-2 { grid-template-columns: 1fr; } }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+  details.fold { border-top: 1px solid var(--line); }
+  details.fold summary {
+    padding: 11px 16px; font-size: 12.5px; font-weight: 550; color: var(--ink-2);
+    cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between;
+  }
+  details.fold summary:hover { color: var(--ink); background: var(--surface-subtle); }
+  details.fold[open] summary { border-bottom: 1px solid var(--line); }
+
+  .toast {
+    position: fixed; bottom: 22px; right: 24px; z-index: 99;
+    background: var(--ink); color: #fff; padding: 9px 14px;
+    border-radius: 8px; font-size: 12.5px; opacity: 0; transform: translateY(6px);
+    pointer-events: none; transition: all 0.16s ease;
+  }
+  .toast.show { opacity: 1; transform: none; }
+
+  .modal-bg {
+    position: fixed; inset: 0; background: rgba(25, 24, 22, 0.35);
+    backdrop-filter: blur(4px); display: none; place-items: center; z-index: 100; padding: 16px;
+  }
+  .modal-bg.open { display: grid; }
+  .modal {
+    width: 100%; max-width: 360px; background: var(--surface);
+    border: 1px solid var(--line-strong); border-radius: 12px; padding: 20px;
+    box-shadow: 0 20px 50px rgba(25, 24, 22, 0.18);
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div>
+      <div class="brand">
+        <div class="brand-mark" title="edualc — reversed spark">
+          <svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+            <g transform="translate(32,0) scale(-1,1)" stroke="#d97757" stroke-width="2.2" stroke-linecap="round">
+              <line x1="16" y1="5.5" x2="16" y2="26.5"/>
+              <line x1="5.5" y1="16" x2="26.5" y2="16"/>
+              <line x1="9" y1="8.2" x2="23" y2="23.8"/>
+              <line x1="23.5" y1="9.2" x2="8.5" y2="22.8"/>
+              <line x1="12" y1="6.3" x2="20" y2="25.7"/>
+              <line x1="6.5" y1="12.2" x2="25.5" y2="19.8"/>
+            </g>
+            <circle cx="16" cy="16" r="2.6" fill="#191816"/>
+          </svg>
+        </div>
+        <div class="brand-name" style="font-size:16px">edualc</div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-btn active" data-view="audit" onclick="showView('audit')">
+          <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+          <span>环境与检测</span>
+          <span class="nav-count" id="navCheckCount">-/10</span>
+        </button>
+        <button class="nav-btn" data-view="egress" onclick="showView('egress')">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
+          <span>出口与订阅</span>
+          <span class="nav-count" id="navNodeCount">-</span>
+        </button>
+        <button class="nav-btn" data-view="accounts" onclick="showView('accounts')">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>
+          <span>账号与登录</span>
+          <span class="nav-count" id="navAccCount">-</span>
+        </button>
+        <button class="nav-btn" data-view="desktop" onclick="showView('desktop')">
+          <svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          <span>Claude 桌面端</span>
+        </button>
+        <button class="nav-btn" data-view="browser" onclick="showView('browser')">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8M11.5 3a17 17 0 0 0 0 18M12.5 3a17 17 0 0 1 0 18"/></svg>
+          <span>隔离浏览器</span>
+        </button>
+        <button class="nav-btn" data-view="terminal" onclick="showView('terminal')">
+          <svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+          <span>容器终端</span>
+        </button>
+        <button class="nav-btn" data-view="hostexec" onclick="showView('hostexec')">
+          <svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+          <span>宿主代理</span>
+          <span class="nav-count" id="navHostCount">-</span>
+        </button>
+        <button class="nav-btn" data-view="resume" onclick="showView('resume')">
+          <svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          <span>批量续跑</span>
+          <span class="nav-count" id="navResumeCount">-</span>
+        </button>
+        <button class="nav-btn" data-view="chat" onclick="showView('chat')">
+          <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span>API 与测试</span>
+        </button>
+        <button class="nav-btn" data-view="guide" onclick="showView('guide')">
+          <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+          <span>防封说明</span>
+        </button>
+        <button class="nav-btn" data-view="updates" onclick="showView('updates')">
+          <svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+          <span>版本与更新</span>
+          <span class="nav-count" id="navUpdBadge">-</span>
+        </button>
+      </nav>
+    </div>
+
+    <div class="side-foot">
+      <div class="side-status">
+        <span id="sideDot" class="dot warn"></span>
+        <span id="sideGateText">检测中...</span>
+        <span id="sideLatency" class="ping" style="margin-left:auto"></span>
+      </div>
+      <div class="side-meta" id="sideIP">—</div>
+      <div class="side-node" id="sideNode">未选择节点</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div id="globalAlert" class="alert fail"></div>
+
+    <!-- View 1: Audit -->
+    <section id="view-audit" class="view active">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">环境与安全检测</h1>
+          <p class="page-sub">独立隔离容器内无公网网卡，全部 10 项防泄露与环境检测通过后自动放行</p>
+        </div>
+        <div class="row">
+          <button class="btn" id="recheckBtn" onclick="runCheck()">重新检测</button>
+          <button class="btn accent" onclick="showView('chat')">测试对话</button>
+        </div>
+      </div>
+
+      <div class="kv-strip">
+        <div class="kv">
+          <div class="kv-label">出口 IP</div>
+          <div class="kv-val mono" id="kvIP">—</div>
+          <div class="kv-sub" id="kvISP">—</div>
+        </div>
+        <div class="kv">
+          <div class="kv-label">地区</div>
+          <div class="kv-val" id="kvLoc">—</div>
+          <div class="kv-sub" id="kvNode">—</div>
+        </div>
+        <div class="kv">
+          <div class="kv-label">容器同步时间</div>
+          <div class="kv-val mono" id="kvClock">—</div>
+          <div class="kv-sub" id="kvTZ">—</div>
+        </div>
+        <div class="kv">
+          <div class="kv-label">账号池</div>
+          <div class="kv-val" id="kvAcc">—</div>
+          <div class="kv-sub" id="kvPol">—</div>
+        </div>
+      </div>
+
+      <div class="sheet">
+        <div class="sheet-head">
+          <span class="sheet-title">检测清单</span>
+          <span class="sheet-title" style="font-family:var(--mono);font-weight:400" id="checkedAt">—</span>
+        </div>
+        <div id="ledger"></div>
+      </div>
+
+      <div class="sheet" id="vmConfigSheet">
+        <div class="sheet-head">
+          <span class="sheet-title">虚拟机资源配置与重启（<span id="vmEngine" style="font-weight:400">读取中...</span>）</span>
+          <div class="row">
+            <span class="sheet-title" style="font-family:var(--mono);font-weight:400" id="vmHostCap">—</span>
+            <button class="btn sm" onclick="restartVM()">仅重启虚拟机</button>
+          </div>
+        </div>
+        <div class="sheet-body">
+          <div class="row" style="gap:12px;align-items:flex-end">
+            <div style="flex:1;min-width:120px">
+              <label style="margin-top:0">CPU 核数</label>
+              <input id="vmCpuInput" type="number" min="1" max="32" />
+            </div>
+            <div style="flex:1;min-width:120px">
+              <label style="margin-top:0">内存 (GB)</label>
+              <input id="vmMemInput" type="number" min="2" max="64" />
+            </div>
+            <div style="flex:1;min-width:120px">
+              <label style="margin-top:0">磁盘上限 (GB，仅支持扩容)</label>
+              <input id="vmDiskInput" type="number" min="20" max="500" />
+            </div>
+            <div>
+              <button class="btn primary" onclick="applyVMConfig()">保存并重启虚拟机</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- View 2: Egress -->
+    <section id="view-egress" class="view">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">出口与订阅</h1>
+          <p class="page-sub">自动剥离全部 DIRECT 直连规则，切节点后同步更新容器与浏览器时区语言</p>
+        </div>
+        <button class="btn" id="delayBtn" onclick="testDelays()">测速当前列表</button>
+      </div>
+
+      <div class="split-2 wide-left">
+        <div class="sheet" style="margin-bottom:0">
+          <div class="node-tools">
+            <input id="nodeSearch" placeholder="筛选节点，例如 USA / GPT / 日本 / 新加坡" oninput="renderNodes()" style="flex:1;min-width:180px" />
+            <label style="margin:0;display:inline-flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="hideBlocked" checked onchange="renderNodes()" style="width:auto" />
+              <span>过滤受限项</span>
+            </label>
+          </div>
+          <div id="nodeList" class="node-scroll" style="max-height:520px"></div>
+        </div>
+
+        <div>
+          <div class="sheet">
+            <div class="sheet-head">
+              <span class="sheet-title">出口防漂移策略</span>
+              <button class="btn sm" onclick="savePolicy(true)">绑定当前出口</button>
+            </div>
+            <div class="sheet-body">
+              <div class="grid-2">
+                <div>
+                  <label style="margin-top:0">模式</label>
+                  <select id="polMode">
+                    <option value="dynamic">动态 IP（按范围约束）</option>
+                    <option value="static">静态 IP（严格锁定单一 IPv4）</option>
+                  </select>
+                </div>
+                <div>
+                  <label style="margin-top:0">允许范围</label>
+                  <select id="polScope">
+                    <option value="any">任意支持地区（拦截 CN/HK/RU 等）</option>
+                    <option value="country">锁定国家</option>
+                    <option value="region">锁定州 / 省</option>
+                    <option value="city">锁定城市</option>
+                  </select>
+                </div>
+              </div>
+              <div class="grid-2">
+                <div><label>国家代码</label><input id="polCountry" placeholder="US" /></div>
+                <div><label>固定 IPv4</label><input id="polIP" placeholder="静态模式时使用" /></div>
+              </div>
+              <div class="grid-2">
+                <div><label>州 / 省</label><input id="polRegion" placeholder="California" /></div>
+                <div><label>城市</label><input id="polCity" placeholder="San Jose" /></div>
+              </div>
+              <div style="margin-top:14px">
+                <button class="btn primary sm" onclick="savePolicy(false)">保存策略并重检</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="sheet" style="margin-bottom:0">
+            <div class="sheet-head"><span class="sheet-title">导入订阅 / 静态代理 / 链式落地</span></div>
+            <div class="sheet-body">
+              <label style="margin-top:0">Clash / Mihomo 订阅地址</label>
+              <input id="subUrl" placeholder="https://..." />
+              <label>链式落地静态代理（可选，机场前置 → 住宅落地）</label>
+              <input id="landingUrl" placeholder="socks5://user:pass@ip:port" />
+              <label>或直接粘贴 YAML（留空则拉取上方链接）</label>
+              <textarea id="rawYaml" placeholder="proxies: ..." style="min-height:60px"></textarea>
+              <div class="row" style="margin-top:10px;justify-content:space-between">
+                <button class="btn primary sm" onclick="applySub()">导入并清洗规则</button>
+              </div>
+              <div style="border-top:1px solid var(--line);margin:14px 0 0;padding-top:12px">
+                <label style="margin-top:0">单个静态代理（SOCKS5 / HTTP）</label>
+                <div class="row">
+                  <input id="staticUrl" placeholder="socks5://user:pass@1.2.3.4:1080" style="flex:1" />
+                  <button class="btn sm" onclick="applyStatic()">应用</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- View 3: Accounts -->
+    <section id="view-accounts" class="view">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">账号与隔离登录</h1>
+          <p class="page-sub">账号凭据仅保存在容器独立目录，登录全程在同步时区与出口的 Docker 浏览器内完成</p>
+        </div>
+        <div class="row">
+          <input id="newAcc" placeholder="新槽位名，如 acc2" style="width:155px;height:32px" />
+          <button class="btn primary" onclick="createAcc()">新建槽位</button>
+        </div>
+      </div>
+
+      <div class="sheet">
+        <div class="sheet-head">
+          <span class="sheet-title">已配置账号与实时用量（零 Token 消耗查询）</span>
+          <button class="btn sm" id="usageAllBtn" onclick="queryUsage('')">刷新全部用量</button>
+        </div>
+        <div id="accList"></div>
+      </div>
+
+      <div class="sheet">
+        <div class="sheet-head">
+          <span class="sheet-title">Claude CLI 必须在容器内登录（严禁使用宿主机浏览器授权）</span>
+          <div class="row">
+            <button class="btn sm" onclick="showView('terminal')">去容器终端 ↗</button>
+            <button class="btn sm primary" onclick="showView('browser')">去隔离浏览器 ↗</button>
+          </div>
+        </div>
+        <div class="sheet-body">
+          <p class="page-sub" style="margin:0 0 12px">步骤：在左侧 <strong>「容器终端」</strong>（或本机敲 <code>edualc login default</code>，本质在容器内执行）运行 <code>claude auth login</code>，复制输出的授权链接到 <strong>「Claude 桌面端」</strong> 内右键唤起的隔离 Chromium 中完成登录，回调会自动在容器内 <code>127.0.0.1</code> 闭环。</p>
+          <div class="grid-2">
+            <div>
+              <label style="margin-top:0">容器内终端直接执行</label>
+              <div class="cmd-line"><span>claude auth login</span><button class="btn sm" onclick="copyText('claude auth login')">复制</button></div>
+            </div>
+            <div>
+              <label style="margin-top:0">或宿主机一键桥接进容器登录</label>
+              <div class="cmd-line"><span>edualc login default</span><button class="btn sm" onclick="copyText('edualc login default')">复制</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- View 4: Built-in Claude Desktop -->
+    <section id="view-desktop" class="view" style="height:100%;flex-direction:column">
+      <div class="page-head" style="padding-bottom:14px;margin-bottom:14px">
+        <div>
+          <h1 class="page-title" style="font-size:21px">Claude 桌面端</h1>
+          <p class="page-sub">官方 Linux 版 Claude Desktop（支持双向剪贴板、Mac Cmd/Ctrl 快捷键、Ctrl+Space 中文拼音输入、共享 /workspace）</p>
+        </div>
+        <div class="row">
+          <button class="btn" onclick="reloadDesktopFrame()">刷新画面</button>
+          <a class="btn primary" href="/desktop/edualc-desktop.html" target="_blank" rel="noopener">独立窗口打开 ↗</a>
+        </div>
+      </div>
+      <div class="embed-shell">
+        <iframe id="desktopFrame" class="embed-frame" src="about:blank" allow="clipboard-read; clipboard-write"></iframe>
+      </div>
+    </section>
+
+    <!-- View 4b: Dedicated Isolated Chromium Browser -->
+    <section id="view-browser" class="view" style="height:100%;flex-direction:column">
+      <div class="page-head" style="padding-bottom:14px;margin-bottom:14px">
+        <div>
+          <h1 class="page-title" style="font-size:21px">隔离浏览器</h1>
+          <p class="page-sub">独立隔离 Chromium（无公网网卡、同出口 IP、同步时区与 Accept-Language、禁用 WebRTC 泄露、支持 OAuth 回调）</p>
+        </div>
+        <div class="row">
+          <button class="btn sm" onclick="openBrowserURL('https://claude.ai')">claude.ai</button>
+          <button class="btn sm" onclick="openBrowserURL('https://fuck-claude.vercel.app/')">环境检测</button>
+          <button class="btn sm" onclick="reloadBrowserFrame()">刷新画面</button>
+          <a class="btn primary sm" href="/browser/edualc-desktop.html" target="_blank" rel="noopener">独立窗口 ↗</a>
+        </div>
+      </div>
+      <div class="row" style="margin-bottom:10px">
+        <input id="browserUrlInput" placeholder="输入任意网址在隔离浏览器中打开，例如 https://fuck-claude.vercel.app/ 或 claude auth 授权链接..." onkeydown="if(event.key==='Enter')openBrowserURL()" style="flex:1" />
+        <button class="btn accent" onclick="openBrowserURL()">打开网址</button>
+      </div>
+      <div class="embed-shell">
+        <iframe id="browserFrame" class="embed-frame" src="about:blank" allow="clipboard-read; clipboard-write"></iframe>
+      </div>
+    </section>
+
+    <!-- View 5: Built-in Container Terminal -->
+    <section id="view-terminal" class="view" style="height:100%;flex-direction:column">
+      <div class="page-head" style="padding-bottom:14px;margin-bottom:14px">
+        <div>
+          <h1 class="page-title" style="font-size:21px">容器终端</h1>
+          <p class="page-sub">默认落在共享 <code>/workspace</code>，划词自动复制、支持宿主机原生中文输入法；本机终端可直接敲 <code>edualc</code> 直连</p>
+        </div>
+        <div class="row">
+          <button class="btn" onclick="copyText('edualc')">复制本机命令</button>
+          <button class="btn" onclick="reloadTermFrame()">重连终端</button>
+          <a class="btn primary" href="http://127.0.0.1:8319" target="_blank" rel="noopener">独立窗口打开 ↗</a>
+        </div>
+      </div>
+      <div class="embed-shell">
+        <iframe id="termFrame" class="embed-frame" src="about:blank"></iframe>
+      </div>
+    </section>
+
+    <!-- View 5b: Host Command Shim & Audit -->
+    <section id="view-hostexec" class="view">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">宿主机透明命令代理</h1>
+          <p class="page-sub">容器内调用以下开发工具时，自动穿透至宿主机原生 CPU/GPU/SSD 执行，并自动脱敏路径，零虚拟机卡顿</p>
+        </div>
+        <button class="btn" onclick="refresh()">刷新状态</button>
+      </div>
+
+      <div class="kv-strip">
+        <div class="kv">
+          <div class="kv-label">守护进程</div>
+          <div class="kv-val" id="hxState">—</div>
+          <div class="kv-sub" id="hxAddr">—</div>
+        </div>
+        <div class="kv">
+          <div class="kv-label">容器工作区</div>
+          <div class="kv-val mono" id="hxGuest">—</div>
+          <div class="kv-sub" id="hxHost">—</div>
+        </div>
+        <div class="kv">
+          <div class="kv-label">已代理工具</div>
+          <div class="kv-val" id="hxToolsCount">—</div>
+          <div class="kv-sub">仅允许白名单命令</div>
+        </div>
+        <div class="kv">
+          <div class="kv-label">累计执行</div>
+          <div class="kv-val mono" id="hxRunsCount">—</div>
+          <div class="kv-sub">实时流式回传</div>
+        </div>
+      </div>
+
+      <div class="split-2">
+        <div class="sheet" style="margin-bottom:0">
+          <div class="sheet-head">
+            <span class="sheet-title">已透传宿主机工具清单</span>
+            <div class="row">
+              <input id="addHostToolInput" placeholder="新增命令，如 gh / ffmpeg" style="width:165px;height:27px;padding:3px 8px;font-size:12px" onkeydown="if(event.key==='Enter')addHostTool()" />
+              <button class="btn sm primary" onclick="addHostTool()">加入代理</button>
+            </div>
+          </div>
+          <div id="hxToolsLedger"></div>
+        </div>
+
+        <div>
+          <div class="sheet">
+            <div class="sheet-head">
+              <span class="sheet-title">未代理命令监控（Hook 自动捕获）</span>
+              <div class="row">
+                <span class="sheet-title" style="font-weight:400" id="hxUnproxiedCount">0 项</span>
+                <button class="btn sm" onclick="clearUnproxied()">清空记录</button>
+              </div>
+            </div>
+            <div id="hxUnproxiedLedger" class="sheet-scroll" style="max-height:280px"></div>
+          </div>
+
+          <div class="sheet" style="margin-bottom:0">
+            <div class="sheet-head">
+              <span class="sheet-title">最近宿主机执行记录</span>
+              <span class="sheet-title" style="font-weight:400">最近 25 条</span>
+            </div>
+            <div id="hxRunsLedger" class="sheet-scroll" style="max-height:300px"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- View 5c: Batch Auto-Resume -->
+    <section id="view-resume" class="view">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">批量续跑中断会话</h1>
+          <p class="page-sub">自动扫描 Claude Desktop 中断或未收尾会话，在隔离容器内接续运行并同步回桌面端记录</p>
+        </div>
+        <div class="row">
+          <button class="btn" onclick="refreshResume()">刷新列表</button>
+          <button class="btn" id="resumeStopBtn" onclick="stopResume()" style="display:none">停止续跑</button>
+          <button class="btn accent" id="resumeAllBtn" onclick="runResumeAll()">一键续跑全部中断会话</button>
+        </div>
+      </div>
+
+      <div class="sheet" style="margin-bottom:18px">
+        <div class="sheet-body">
+          <div class="row" style="gap:10px;align-items:flex-end;flex-wrap:wrap">
+            <div style="flex:1;min-width:260px">
+              <label style="margin-top:0">续跑提示词</label>
+              <input id="resumePrompt" value="继续完成上面中断的任务，并给出简明的最终结果总结。" oninput="resumeSchedDirty=true" />
+            </div>
+            <div style="width:130px">
+              <label style="margin-top:0">并发数</label>
+              <select id="resumeConcurrency" onchange="resumeSchedDirty=true">
+                <option value="1" selected>1（串行最稳）</option>
+                <option value="2">2（双并发）</option>
+              </select>
+            </div>
+          </div>
+          <div class="row" style="gap:12px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line);flex-wrap:wrap;justify-content:space-between">
+            <div class="row" style="gap:12px;flex-wrap:wrap">
+              <label style="margin:0;display:inline-flex;align-items:center;gap:6px;cursor:pointer;color:var(--ink);font-size:13px;font-weight:500">
+                <input type="checkbox" id="resumeSchedEnabled" style="width:auto" onchange="resumeSchedDirty=true" />
+                <span>开启定时自动续跑</span>
+              </label>
+              <div class="row" style="gap:6px">
+                <span style="font-size:12px;color:var(--ink-3)">巡检周期</span>
+                <select id="resumeSchedInterval" style="width:108px;height:30px;padding:3px 8px;font-size:12.5px" onchange="resumeSchedDirty=true">
+                  <option value="5">每 5 分钟</option>
+                  <option value="10" selected>每 10 分钟</option>
+                  <option value="15">每 15 分钟</option>
+                  <option value="30">每 30 分钟</option>
+                  <option value="60">每 60 分钟</option>
+                </select>
+              </div>
+              <div class="row" style="gap:6px">
+                <span style="font-size:12px;color:var(--ink-3)">防死循环上限</span>
+                <select id="resumeSchedMaxRetries" style="width:118px;height:30px;padding:3px 8px;font-size:12.5px" onchange="resumeSchedDirty=true">
+                  <option value="1">单状态 1 次</option>
+                  <option value="2" selected>单状态 2 次</option>
+                  <option value="3">单状态 3 次</option>
+                </select>
+              </div>
+              <span id="resumeNextCheck" style="font-size:12px;color:var(--ink-3)">定时巡检未开启</span>
+            </div>
+            <button class="btn primary sm" id="resumeSchedSaveBtn" onclick="saveResumeSchedule()">保存定时设置</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="split-2 wide-left">
+        <div class="sheet" style="margin-bottom:0">
+          <div class="sheet-head">
+            <span class="sheet-title">近期 Claude Desktop 会话（中断项置顶）</span>
+            <span class="sheet-title" style="font-weight:400" id="resumeSummary">—</span>
+          </div>
+          <div id="resumeSessionsList" class="sheet-scroll" style="max-height:520px"></div>
+        </div>
+
+        <div class="sheet" style="margin-bottom:0">
+          <div class="sheet-head">
+            <span class="sheet-title">实时续跑日志</span>
+            <span id="resumeRunBadge" class="tag muted">空闲</span>
+          </div>
+          <div class="sheet-body" style="padding:12px">
+            <pre id="resumeLogPre" style="margin:0;min-height:420px;max-height:500px;overflow-y:auto;font-family:var(--mono);font-size:12px;line-height:1.55;color:var(--ink-2);white-space:pre-wrap;word-break:break-word">点击任意会话右侧「续跑」或右上角「一键续跑全部中断会话」即可开始...</pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- View 6: Chat & Integration -->
+    <section id="view-chat" class="view">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">对话测试与接入</h1>
+          <p class="page-sub">经容器内正版 claude CLI 子进程流式返回，宿主机零环境污染</p>
+        </div>
+        <select id="chatModel" style="width:120px;height:32px">
+          <option value="sonnet">sonnet</option>
+          <option value="haiku">haiku</option>
+          <option value="opus">opus</option>
+        </select>
+      </div>
+
+      <div class="split-2 wide-left">
+        <div class="sheet" style="margin-bottom:0">
+          <div id="chatStream" class="chat-stream" style="min-height:380px;max-height:520px">
+            <div class="msg hint">发一句话测试全链路响应</div>
+          </div>
+          <div class="composer">
+            <input id="chatInput" placeholder="输入消息，回车发送..." onkeydown="if(event.key==='Enter')sendChat()" style="flex:1" />
+            <button class="btn accent" id="sendBtn" onclick="sendChat()">发送</button>
+          </div>
+        </div>
+
+        <div class="sheet" style="margin-bottom:0">
+          <div class="sheet-head"><span class="sheet-title">客户端接入地址</span></div>
+          <div class="sheet-body">
+            <label style="margin-top:0">OpenAI 兼容（Cherry Studio / SDK）</label>
+            <div class="cmd-line"><span>http://127.0.0.1:8317/v1</span><button class="btn sm" onclick="copyText('http://127.0.0.1:8317/v1')">复制</button></div>
+            <label>Anthropic 原生接口</label>
+            <div class="cmd-line"><span>http://127.0.0.1:8317</span><button class="btn sm" onclick="copyText('http://127.0.0.1:8317')">复制</button></div>
+            <label>API Key（本机免密时任意占位符）</label>
+            <div class="cmd-line"><span>sk-local</span><button class="btn sm" onclick="copyText('sk-local')">复制</button></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- View 7: Anti-Ban Guide -->
+    <section id="view-guide" class="view">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">防封说明</h1>
+          <p class="page-sub">Anthropic 风控由 IP、付款、浏览器环境三维度交叉打分，三者同时干净与一致是长期稳号的核心</p>
+        </div>
+        <div class="row">
+          <button class="btn" onclick="openBrowserURL('https://fuck-claude.vercel.app/')">在隔离浏览器跑检测 ↗</button>
+          <button class="btn accent" onclick="showView('audit')">查看当前 10 项自检</button>
+        </div>
+      </div>
+
+      <div class="sheet">
+        <div class="sheet-head">
+          <span class="sheet-title">一、IP 与网络出口</span>
+          <span class="tag ok">核心权重最高</span>
+        </div>
+        <div class="ledger-row">
+          <div class="ledger-name"><span class="dot fail"></span><span>绝对红线</span></div>
+          <div class="ledger-ev">严禁漏出受限地区（CN / HK / MO / RU / BY / IR / KP），哪怕一次代理闪断回退直连、IPv6 或 UDP 53 泄露都可能触发标记。</div>
+          <div style="text-align:right"><span class="tag fail">高危</span></div>
+        </div>
+        <div class="ledger-row">
+          <div class="ledger-name"><span class="dot warn"></span><span>节点质量</span></div>
+          <div class="ledger-ev">纯净度：<strong>海外静态住宅 IP &gt; 独享静态机房 IP &gt; 机场解锁节点</strong>。推荐在「出口与订阅」用<strong>链式代理</strong>（机场前置 → 静态住宅 SOCKS5 落地），避免万人骑脏 IP。</div>
+          <div style="text-align:right"><span class="tag warn">关键</span></div>
+        </div>
+        <div class="ledger-row">
+          <div class="ledger-name"><span class="dot ok"></span><span>防地理瞬移</span></div>
+          <div class="ledger-ev">不要一天内美 / 日 / 欧来回切。选定出口后在「出口与订阅」点击<strong>绑定当前出口</strong>，锁死国家或固定 IPv4，并保持零 <code>DIRECT</code> 断网保护。</div>
+          <div style="text-align:right"><span class="tag ok">必做</span></div>
+        </div>
+      </div>
+
+      <div class="sheet">
+        <div class="sheet-head">
+          <span class="sheet-title">二、付款与账单（Stripe 风控）</span>
+          <span class="tag warn">付款后 48h 高发</span>
+        </div>
+        <div class="ledger-row">
+          <div class="ledger-name"><span class="dot ok"></span><span>最稳支付路径</span></div>
+          <div class="ledger-ev"><strong>美区 Apple ID + iOS App Store 正规礼品卡内购订阅</strong>：由 Apple 统一代收，彻底绕开 Stripe 信用卡 BIN 与账单地址交叉审查，订完后网页 / Desktop / CLI 全端通用。</div>
+          <div style="text-align:right"><span class="tag ok">首选</span></div>
+        </div>
+        <div class="ledger-row">
+          <div class="ledger-name"><span class="dot warn"></span><span>实体卡 / 账单对齐</span></div>
+          <div class="ledger-ev">若用海外本人实体卡或 Google Play，务必确保<strong>出口 IP 国家、发卡行国家、账单邮编</strong>一致（如美区 IP + 美区卡 + 免税州地址），且扣款失败不要连续硬试。</div>
+          <div style="text-align:right"><span class="tag warn">注意</span></div>
+        </div>
+        <div class="ledger-row">
+          <div class="ledger-name"><span class="dot fail"></span><span>高危避坑</span></div>
+          <div class="ledger-ev">避开国内双币卡、被薅烂的共享虚拟卡 BIN、以及淘宝/闲鱼低价代充与成品号（上游黑卡一笔拒付即整批连坐封号）。新号建议免费正常用 1~2 天再订阅。</div>
+          <div style="text-align:right"><span class="tag fail">避坑</span></div>
+        </div>
+      </div>
+
+      <div class="sheet">
+        <div class="sheet-head">
+          <span class="sheet-title">三、浏览器与运行环境指纹</span>
+          <span class="tag ok">已由 edualc 自动隔离</span>
+        </div>
+        <div class="ledger-row">
+          <div class="ledger-name"><span class="dot ok"></span><span>时区与语言强一致</span></div>
+          <div class="ledger-ev">出口在美国时，系统 <code>/etc/localtime</code>、<code>TZ</code>、<code>LANG</code>、浏览器 <code>Intl.DateTimeFormat</code> 与 <code>Accept-Language</code> 必须全部对齐为出口当地，绝不能出现“美国 IP + 东八区 zh-CN”。</div>
+          <div style="text-align:right"><span class="tag ok">已同步</span></div>
+        </div>
+        <div class="ledger-row">
+          <div class="ledger-name"><span class="dot ok"></span><span>全程容器内登录</span></div>
+          <div class="ledger-ev"><strong>Claude CLI、Claude Desktop 与网页登录必须全部在容器内完成</strong>，绝不用宿主机日常浏览器打开 <code>claude.ai</code> 或过 OAuth（防止宿主机 Cookie / 指纹污染与遥测旁路直连）。</div>
+          <div style="text-align:right"><span class="tag ok">强制</span></div>
+        </div>
+        <div class="ledger-row">
+          <div class="ledger-name"><span class="dot ok"></span><span>WebRTC 与纯净度</span></div>
+          <div class="ledger-ev">容器无公网网卡并禁用非代理 UDP / IPv6；不要乱装随机魔改 Canvas/WebGL 的反指纹插件，使用原生纯净 Chromium 最自然。登号前可跑 <code>edualc browser https://fuck-claude.vercel.app/</code> 复核。</div>
+          <div style="text-align:right"><span class="tag ok">建议</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- View 8: Version & Auto-Update -->
+    <section id="view-updates" class="view">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">版本与自动更新</h1>
+          <p class="page-sub">每 6 小时自动经隔离代理检查 Claude Code CLI、Claude Desktop 与 Mihomo 最新版本，零直连泄露</p>
+        </div>
+        <div class="row">
+          <button class="btn" id="updCheckBtn" onclick="checkUpdates()">立即检查更新</button>
+          <button class="btn accent" id="updClaudeBtn" onclick="upgradeClaudeCode()">一键升级 Claude CLI</button>
+        </div>
+      </div>
+
+      <div class="sheet">
+        <div class="sheet-head">
+          <span class="sheet-title">组件版本清单</span>
+          <span class="sheet-title" style="font-family:var(--mono);font-weight:400" id="updCheckedAt">—</span>
+        </div>
+        <div id="updatesLedger"></div>
+      </div>
+
+      <div class="sheet" id="updLogSheet" style="display:none">
+        <div class="sheet-head"><span class="sheet-title">最近升级日志</span></div>
+        <div class="sheet-body">
+          <pre id="updLogPre" style="margin:0;font-family:var(--mono);font-size:12px;color:var(--ink-2);white-space:pre-wrap;word-break:break-all"></pre>
+        </div>
+      </div>
+
+      <div class="sheet">
+        <div class="sheet-head"><span class="sheet-title">镜像升级命令（当 Claude Desktop 或 Mihomo 有新版时）</span></div>
+        <div class="sheet-body grid-2">
+          <div>
+            <label style="margin-top:0">更新 Claude Desktop 容器</label>
+            <div class="cmd-line"><span>docker compose build --no-cache desktop && docker compose up -d desktop</span><button class="btn sm" onclick="copyText('docker compose build --no-cache desktop && docker compose up -d desktop')">复制</button></div>
+          </div>
+          <div>
+            <label style="margin-top:0">更新 Mihomo 网关容器</label>
+            <div class="cmd-line"><span>docker compose pull && docker compose up -d --build gateway</span><button class="btn sm" onclick="copyText('docker compose pull && docker compose up -d --build gateway')">复制</button></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="authModal" class="modal-bg">
+  <div class="modal">
+    <div style="font-weight:650;font-size:15px">输入访问密钥</div>
+    <p class="page-sub" style="margin-bottom:12px">当前服务端启用了 RELAY_API_KEY：</p>
+    <input id="modalKey" type="password" placeholder="RELAY_API_KEY" onkeydown="if(event.key==='Enter')saveKey()" />
+    <div class="row" style="margin-top:12px;justify-content:flex-end">
+      <button class="btn primary" onclick="saveKey()">解锁</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+let state = {};
+let delays = {};
+let tz = '';
+let toastT = null;
+
+function toast(m) {
+  const el = document.getElementById('toast');
+  el.textContent = m; el.classList.add('show');
+  clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), 2400);
+}
+
+const DESKTOP_URL = '/desktop/edualc-desktop.html';
+const BROWSER_URL = '/browser/edualc-desktop.html';
+const TERM_URL = 'http://127.0.0.1:8319';
+
+function showView(v) {
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.view === v));
+  const isWide = (v === 'desktop' || v === 'browser' || v === 'terminal');
+  document.querySelectorAll('.view').forEach(s => {
+    const active = s.id === 'view-' + v;
+    s.classList.toggle('active', active);
+    if (s.id === 'view-desktop' || s.id === 'view-browser' || s.id === 'view-terminal') {
+      s.style.display = active ? 'flex' : 'none';
+    }
+  });
+  document.querySelector('.main').classList.toggle('wide', isWide);
+  if (v === 'desktop') {
+    const f = document.getElementById('desktopFrame');
+    if (f.src === 'about:blank') f.src = DESKTOP_URL;
+  }
+  if (v === 'browser') {
+    const f = document.getElementById('browserFrame');
+    if (f.src === 'about:blank') f.src = BROWSER_URL;
+  }
+  if (v === 'terminal') {
+    const f = document.getElementById('termFrame');
+    if (f.src === 'about:blank') f.src = TERM_URL;
+  }
+}
+
+function reloadDesktopFrame() {
+  document.getElementById('desktopFrame').src = DESKTOP_URL + '?_t=' + Date.now();
+}
+function reloadBrowserFrame() {
+  document.getElementById('browserFrame').src = BROWSER_URL + '?_t=' + Date.now();
+}
+function reloadTermFrame() {
+  document.getElementById('termFrame').src = TERM_URL + '/?_t=' + Date.now();
+}
+async function openBrowserURL(explicitUrl) {
+  const inp = document.getElementById('browserUrlInput');
+  const url = (explicitUrl || inp.value || '').trim();
+  if (!url) return;
+  inp.value = url;
+  showView('browser');
+  try {
+    await req('/admin/browser/open', {method: 'POST', body: JSON.stringify({url})});
+    toast('已在隔离浏览器打开：' + url);
+  } catch (e) { toast('打开失败：' + e.message); }
+}
+
+function headers() {
+  const h = {'Content-Type': 'application/json'};
+  const k = localStorage.getItem('edualc_api_key') || '';
+  if (k) h['Authorization'] = 'Bearer ' + k;
+  return h;
+}
+
+async function req(path, opts = {}) {
+  const r = await fetch(path, {...opts, headers: {...headers(), ...(opts.headers || {})}});
+  if (r.status === 401) {
+    document.getElementById('authModal').classList.add('open');
+    throw new Error('需要 RELAY_API_KEY');
+  }
+  const t = await r.text();
+  let j = {}; try { j = JSON.parse(t); } catch { j = {error: t}; }
+  if (!r.ok) throw new Error(j.error?.message || j.error || ('HTTP ' + r.status));
+  return j;
+}
+
+function saveKey() {
+  localStorage.setItem('edualc_api_key', document.getElementById('modalKey').value.trim());
+  document.getElementById('authModal').classList.remove('open');
+  refresh();
+}
+
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+function copyText(s) { navigator.clipboard?.writeText(s).then(() => toast('已复制')).catch(() => toast('请手动复制')); }
+
+function tick() {
+  const el = document.getElementById('kvClock');
+  if (!tz) { el.textContent = '—'; return; }
+  try {
+    el.textContent = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz, hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short'
+    }).format(new Date());
+  } catch { el.textContent = tz; }
+}
+setInterval(tick, 1000);
+
+function render(data) {
+  state = data || {};
+  const rep = state.report || {};
+  const loc = rep.location || {};
+  const gw = state.gateway || {};
+  const pol = state.policy || {};
+  const checks = rep.checks || [];
+  const accs = state.accounts || [];
+  const passed = checks.filter(c => c.state === 'passed').length;
+
+  document.getElementById('navCheckCount').textContent = `${passed}/${checks.length || 10}`;
+  document.getElementById('navNodeCount').textContent = (gw.nodes || []).length || '-';
+  const logged = accs.filter(a => a.logged_in && a.enabled).length;
+  document.getElementById('navAccCount').textContent = `${logged}/${accs.length}`;
+
+  const dot = document.getElementById('sideDot');
+  const alertEl = document.getElementById('globalAlert');
+  if (rep.authorized) {
+    dot.className = 'dot ok';
+    document.getElementById('sideGateText').textContent = '门控已放行';
+    alertEl.className = 'alert'; alertEl.textContent = '';
+  } else {
+    dot.className = 'dot fail';
+    document.getElementById('sideGateText').textContent = '门控已熔断';
+    alertEl.className = 'alert fail';
+    alertEl.textContent = rep.block_reason || '安全检测未通过，对外发包已暂停';
+  }
+  const sideLat = document.getElementById('sideLatency');
+  if (rep.latency_ms > 0) {
+    const c = rep.latency_ms < 900 ? 'fast' : (rep.latency_ms < 2200 ? 'med' : 'slow');
+    sideLat.className = 'ping ' + c;
+    sideLat.textContent = rep.latency_ms + ' ms';
+  } else {
+    sideLat.className = 'ping';
+    sideLat.textContent = '';
+  }
+  document.getElementById('sideIP').textContent = rep.exit_ip ? `${rep.exit_ip} · ${loc.country_code || ''}` : '未连接出口';
+  document.getElementById('sideNode').textContent = gw.selected_node || '未选择节点';
+
+  document.getElementById('kvIP').textContent = rep.exit_ip
+    ? (rep.latency_ms > 0 ? `${rep.exit_ip} · ${rep.latency_ms} ms` : rep.exit_ip)
+    : '—';
+  document.getElementById('kvISP').textContent = [loc.asn, loc.isp].filter(Boolean).join(' · ') || '—';
+  document.getElementById('kvLoc').textContent = loc.country_code ? `${loc.country_code} · ${loc.city || loc.region || loc.country}` : '—';
+  document.getElementById('kvNode').textContent = gw.selected_node || '—';
+  tz = rep.synced_tz || '';
+  tick();
+  document.getElementById('kvTZ').textContent = tz ? `${tz} · ${rep.synced_locale || ''}` : '—';
+  document.getElementById('kvAcc').textContent = `${logged} / ${accs.length} 已登录`;
+  document.getElementById('kvPol').textContent = pol.mode === 'static' ? `静态 ${pol.ip || '未绑定'}` : `动态 · ${pol.scope || 'any'}`;
+  document.getElementById('checkedAt').textContent = rep.created_at ? new Date(rep.created_at).toLocaleTimeString() : '—';
+
+  const ledger = document.getElementById('ledger');
+  ledger.innerHTML = '';
+  checks.forEach(c => {
+    const cls = c.state === 'passed' ? 'ok' : (c.state === 'failed' ? 'fail' : 'warn');
+    const lbl = c.state === 'passed' ? '通过' : (c.state === 'failed' ? '失败' : '待定');
+    const row = document.createElement('div');
+    row.className = 'ledger-row';
+    row.innerHTML = `
+      <div class="ledger-name"><span class="dot ${cls}"></span><span>${esc(c.title)}</span></div>
+      <div class="ledger-ev">${esc(c.evidence)}${c.remedy ? `<div class="ledger-rem">${esc(c.remedy)}</div>` : ''}</div>
+      <div style="text-align:right"><span class="tag ${cls}">${lbl}</span></div>`;
+    ledger.appendChild(row);
+  });
+
+  const activeEl = document.activeElement;
+  const editingForm = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT');
+  if (!editingForm) {
+    document.getElementById('polMode').value = pol.mode || 'dynamic';
+    document.getElementById('polScope').value = pol.scope || 'any';
+    document.getElementById('polCountry').value = pol.country_code || '';
+    document.getElementById('polIP').value = pol.ip || '';
+    document.getElementById('polRegion').value = pol.region || '';
+    document.getElementById('polCity').value = pol.city || '';
+  }
+  if (gw.subscription_url && !document.getElementById('subUrl').value) document.getElementById('subUrl').value = gw.subscription_url;
+  if (gw.landing_proxy_url && !document.getElementById('landingUrl').value) document.getElementById('landingUrl').value = gw.landing_proxy_url;
+  if (gw.static_proxy_url && !document.getElementById('staticUrl').value) document.getElementById('staticUrl').value = gw.static_proxy_url;
+
+  renderNodes();
+  renderAccounts();
+  renderUpdates();
+  renderHostExec();
+  renderVM();
+  renderResume();
+}
+
+let resumeSchedDirty = false;
+function renderResume() {
+  const rs = state.resume;
+  const badge = document.getElementById('navResumeCount');
+  if (!rs) {
+    badge.textContent = '-';
+    return;
+  }
+  const stalled = rs.stalled_count || 0;
+  const sc = rs.schedule || {};
+  if (rs.running) {
+    badge.textContent = '运行中';
+    badge.style.color = 'var(--accent)';
+  } else if (stalled > 0) {
+    badge.textContent = `${stalled} 待续`;
+    badge.style.color = 'var(--accent)';
+  } else if (sc.enabled) {
+    badge.textContent = '定时中';
+    badge.style.color = 'var(--ok)';
+  } else {
+    badge.textContent = '正常';
+    badge.style.color = 'var(--ok)';
+  }
+
+  const schedIds = ['resumeSchedEnabled', 'resumeSchedInterval', 'resumeSchedMaxRetries', 'resumePrompt', 'resumeConcurrency'];
+  const activeId = document.activeElement ? document.activeElement.id : '';
+  if (!resumeSchedDirty && !schedIds.includes(activeId)) {
+    const enEl = document.getElementById('resumeSchedEnabled');
+    if (enEl) enEl.checked = !!sc.enabled;
+    const ivEl = document.getElementById('resumeSchedInterval');
+    if (ivEl && sc.interval_min) ivEl.value = String(sc.interval_min);
+    const mrEl = document.getElementById('resumeSchedMaxRetries');
+    if (mrEl && sc.max_retries) mrEl.value = String(sc.max_retries);
+    const prEl = document.getElementById('resumePrompt');
+    if (prEl && sc.prompt) prEl.value = sc.prompt;
+    const ccEl = document.getElementById('resumeConcurrency');
+    if (ccEl && sc.concurrency) ccEl.value = String(sc.concurrency);
+  }
+  const nextEl = document.getElementById('resumeNextCheck');
+  if (nextEl) {
+    if (sc.enabled && rs.next_check_at) {
+      nextEl.textContent = `下次巡检 ${new Date(rs.next_check_at).toLocaleTimeString()}`;
+      nextEl.style.color = 'var(--ok)';
+    } else if (sc.enabled) {
+      nextEl.textContent = `每 ${sc.interval_min || 10} 分钟巡检`;
+      nextEl.style.color = 'var(--ok)';
+    } else {
+      nextEl.textContent = '定时巡检未开启';
+      nextEl.style.color = 'var(--ink-3)';
+    }
+  }
+
+  document.getElementById('resumeStopBtn').style.display = rs.running ? '' : 'none';
+  document.getElementById('resumeAllBtn').disabled = !!rs.running || stalled === 0;
+  const runBadge = document.getElementById('resumeRunBadge');
+  if (rs.running) {
+    runBadge.className = 'tag warn'; runBadge.textContent = '续跑中...';
+  } else if (rs.finished_at) {
+    runBadge.className = rs.last_exit === 0 ? 'tag ok' : 'tag fail';
+    runBadge.textContent = rs.last_exit === 0 ? '最近完成' : `退出 ${rs.last_exit}`;
+  } else {
+    runBadge.className = 'tag muted'; runBadge.textContent = '空闲';
+  }
+
+  const sessions = (rs.sessions || []).slice().sort((a, b) => {
+    const rank = s => s.status === 'STALLED' ? 0 : (s.status === 'ACTIVE' ? 1 : 2);
+    const d = rank(a) - rank(b);
+    return d !== 0 ? d : (b.mtime || 0) - (a.mtime || 0);
+  });
+  document.getElementById('resumeSummary').textContent = `共 ${sessions.length} 个 · ${stalled} 个中断待续`;
+
+  const list = document.getElementById('resumeSessionsList');
+  list.innerHTML = '';
+  if (!sessions.length) {
+    list.innerHTML = '<div style="padding:18px;color:var(--ink-3);font-size:13px">暂无近期 Claude Desktop 会话</div>';
+  } else {
+    sessions.forEach(s => {
+      const cls = s.status === 'STALLED' ? 'fail' : (s.status === 'ACTIVE' ? 'warn' : 'ok');
+      const lbl = s.status === 'STALLED' ? '中断待续' : (s.status === 'ACTIVE' ? '运行中' : '已完成');
+      const row = document.createElement('div');
+      row.className = 'ledger-row';
+      row.innerHTML = `
+        <div class="ledger-name"><span class="dot ${cls}"></span><span style="font-family:var(--mono);font-size:12px">${esc(s.id.slice(0, 8))}</span></div>
+        <div class="ledger-ev">
+          <div style="font-weight:550;color:var(--ink)">${esc(s.title)} <span class="tag ${cls}" style="margin-left:6px">${lbl}</span></div>
+          <div style="font-size:11.5px;color:var(--ink-3);margin-top:2px">${esc(s.mtime_str)} · ${s.size_kb || 0}KB · ${esc(s.reason)}</div>
+        </div>
+        <div style="text-align:right">
+          <button class="btn sm ${s.status === 'STALLED' ? 'accent' : ''}" ${rs.running ? 'disabled' : ''} onclick="runResumeOne('${esc(s.id)}')">续跑</button>
+        </div>`;
+      list.appendChild(row);
+    });
+  }
+
+  if (rs.log) {
+    const pre = document.getElementById('resumeLogPre');
+    pre.textContent = rs.log;
+    pre.scrollTop = pre.scrollHeight;
+  }
+}
+
+async function refreshResume() {
+  try {
+    state.resume = await req('/admin/resume/status');
+    renderResume();
+  } catch (e) { toast('刷新失败：' + e.message); }
+}
+
+async function runResumeAll() {
+  try {
+    state.resume = await req('/admin/resume/run', {
+      method: 'POST',
+      body: JSON.stringify({
+        all: true,
+        prompt: document.getElementById('resumePrompt').value.trim(),
+        concurrency: parseInt(document.getElementById('resumeConcurrency').value, 10) || 1
+      })
+    });
+    renderResume();
+    toast('已启动批量续跑全部中断会话');
+    pollResumeWhileRunning();
+  } catch (e) { toast('启动失败：' + e.message); }
+}
+
+async function runResumeOne(id) {
+  try {
+    state.resume = await req('/admin/resume/run', {
+      method: 'POST',
+      body: JSON.stringify({
+        ids: [id],
+        all: false,
+        prompt: document.getElementById('resumePrompt').value.trim(),
+        concurrency: 1
+      })
+    });
+    renderResume();
+    toast('已启动续跑：' + id.slice(0, 8));
+    pollResumeWhileRunning();
+  } catch (e) { toast('启动失败：' + e.message); }
+}
+
+async function stopResume() {
+  try {
+    state.resume = await req('/admin/resume/stop', {method: 'POST'});
+    renderResume();
+    toast('已发送停止信号');
+  } catch (e) { toast(e.message); }
+}
+
+async function saveResumeSchedule() {
+  const btn = document.getElementById('resumeSchedSaveBtn');
+  if (btn) btn.disabled = true;
+  try {
+    const enabled = !!document.getElementById('resumeSchedEnabled').checked;
+    const interval_min = parseInt(document.getElementById('resumeSchedInterval').value, 10) || 10;
+    const max_retries = parseInt(document.getElementById('resumeSchedMaxRetries').value, 10) || 2;
+    const prompt = document.getElementById('resumePrompt').value.trim();
+    const concurrency = parseInt(document.getElementById('resumeConcurrency').value, 10) || 1;
+    state.resume = await req('/admin/resume/schedule', {
+      method: 'POST',
+      body: JSON.stringify({enabled, interval_min, max_retries, prompt, concurrency})
+    });
+    resumeSchedDirty = false;
+    renderResume();
+    toast(enabled ? `定时续跑已开启：每 ${interval_min} 分钟自动巡检` : '已关闭定时自动续跑');
+  } catch (e) {
+    toast('保存定时设置失败：' + e.message);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+let resumePollT = null;
+function pollResumeWhileRunning() {
+  clearTimeout(resumePollT);
+  if (!state.resume || !state.resume.running) return;
+  resumePollT = setTimeout(async () => {
+    try { state.resume = await req('/admin/resume/status'); renderResume(); } catch {}
+    pollResumeWhileRunning();
+  }, 3000);
+}
+
+function renderVM() {
+  const vm = state.vm;
+  const sheet = document.getElementById('vmConfigSheet');
+  if (!vm) { sheet.style.display = 'none'; return; }
+  sheet.style.display = '';
+  document.getElementById('vmEngine').textContent = vm.engine || vm.platform || '';
+  const cap = vm.host_ram_gb ? `宿主机 ${vm.host_cpus} 核 / ${vm.host_ram_gb} GB` : `宿主机 ${vm.host_cpus || '-'} 核`;
+  document.getElementById('vmHostCap').textContent = cap;
+  const activeEl = document.activeElement;
+  const editing = activeEl && (activeEl.id === 'vmCpuInput' || activeEl.id === 'vmMemInput' || activeEl.id === 'vmDiskInput');
+  if (!editing) {
+    if (vm.cpu) document.getElementById('vmCpuInput').value = vm.cpu;
+    if (vm.memory_gb) document.getElementById('vmMemInput').value = vm.memory_gb;
+    if (vm.disk_gb) document.getElementById('vmDiskInput').value = vm.disk_gb;
+  }
+}
+
+async function applyVMConfig() {
+  const cpu = parseInt(document.getElementById('vmCpuInput').value, 10);
+  const memory_gb = parseInt(document.getElementById('vmMemInput').value, 10);
+  const disk_gb = parseInt(document.getElementById('vmDiskInput').value, 10);
+  if (!confirm(`确认将虚拟机调整为 ${cpu} 核 / ${memory_gb} GB 内存 / ${disk_gb} GB 磁盘并重启虚拟机？\n（当前桌面会话将暂时中断，约 30 秒后自动恢复）`)) return;
+  try {
+    const res = await req('/admin/vm/apply', {method: 'POST', body: JSON.stringify({cpu, memory_gb, disk_gb})});
+    toast(res.message || '正在应用配置并重启虚拟机...');
+  } catch (e) { toast('配置失败：' + e.message); }
+}
+
+async function restartVM() {
+  if (!confirm('确认重启虚拟机？（约 20~30 秒后自动恢复，数据不会丢失）')) return;
+  try {
+    const res = await req('/admin/vm/restart', {method: 'POST'});
+    toast(res.message || '正在重启虚拟机...');
+  } catch (e) { toast('重启失败：' + e.message); }
+}
+
+function renderHostExec() {
+  const hx = state.hostexec || {};
+  const badge = document.getElementById('navHostCount');
+  if (hx.online) {
+    badge.textContent = `${hx.available_count || 0}/${hx.total_tools || 0}`;
+    badge.style.color = 'var(--ok)';
+  } else {
+    badge.textContent = '离线';
+    badge.style.color = 'var(--fail)';
+  }
+
+  document.getElementById('hxState').textContent = hx.online ? '在线运行中' : '离线';
+  document.getElementById('hxAddr').textContent = hx.online ? (hx.listen_addr || '127.0.0.1:8325') : (hx.error || '请运行 ./scripts/hostexec.sh');
+  document.getElementById('hxGuest').textContent = hx.workspace_guest || '/workspace';
+  document.getElementById('hxHost').textContent = hx.workspace_host || '—';
+  document.getElementById('hxToolsCount').textContent = hx.online ? `${hx.available_count || 0} / ${hx.total_tools || 0} 可用` : '—';
+  document.getElementById('hxRunsCount').textContent = hx.online ? `${hx.total_runs || 0} 次` : '—';
+
+  const tb = document.getElementById('hxToolsLedger');
+  tb.innerHTML = '';
+  const tools = hx.tools || [];
+  if (!tools.length) {
+    tb.innerHTML = '<div style="padding:18px;color:var(--ink-3);font-size:13px">宿主机 hostexec 未连接，请在宿主机运行 ./scripts/hostexec.sh</div>';
+  } else {
+    tools.forEach(t => {
+      const row = document.createElement('div');
+      row.className = 'ledger-row';
+      row.innerHTML = `
+        <div class="ledger-name"><span class="dot ${t.available ? 'ok' : 'warn'}"></span><span style="font-family:var(--mono)">${esc(t.name)}</span></div>
+        <div class="ledger-ev" style="font-family:var(--mono);font-size:12px">${t.available ? esc(t.host_path) : '宿主机 PATH 中未检测到此命令'}</div>
+        <div style="text-align:right">${t.available ? `<button class="btn sm" onclick="testHostTool('${esc(t.name)}', this)">测试</button>` : '<span class="tag warn">缺失</span>'}</div>`;
+      tb.appendChild(row);
+    });
+  }
+
+  const ub = document.getElementById('hxUnproxiedLedger');
+  ub.innerHTML = '';
+  const unp = state.unproxied_cmds || [];
+  document.getElementById('hxUnproxiedCount').textContent = `${unp.length} 项`;
+  if (!unp.length) {
+    ub.innerHTML = '<div style="padding:18px;color:var(--ink-3);font-size:13px">暂未捕获到未代理的非基础命令（Claude 通过 Bash 调用任意未代理命令，或容器内触发 command not found 时会自动记在此处）。</div>';
+  } else {
+    unp.forEach(u => {
+      const cls = u.missing ? 'fail' : 'warn';
+      const lbl = u.missing ? '容器缺失' : `容器本地 · ${u.count}次`;
+      const row = document.createElement('div');
+      row.className = 'ledger-row';
+      row.innerHTML = `
+        <div class="ledger-name"><span class="dot ${cls}"></span><span style="font-family:var(--mono)">${esc(u.bin)}</span></div>
+        <div class="ledger-ev"><div class="clamp-2" title="${esc(u.last_cmd || '')}" style="font-family:var(--mono);font-size:12px;color:var(--ink)">${esc(u.last_cmd || '')}</div><div style="font-size:11.5px;color:var(--ink-3)">${lbl} · 最近 ${u.last_ts ? new Date(u.last_ts).toLocaleTimeString() : '-'}</div></div>
+        <div style="text-align:right"><button class="btn sm accent" onclick="addHostTool('${esc(u.bin)}')">加入代理</button></div>`;
+      ub.appendChild(row);
+    });
+  }
+
+  const rb = document.getElementById('hxRunsLedger');
+  rb.innerHTML = '';
+  const runs = hx.recent_runs || [];
+  if (!runs.length) {
+    rb.innerHTML = '<div style="padding:18px;color:var(--ink-3);font-size:13px">暂无执行记录，可在上方点击任意工具「测试」或让 Claude 执行 cargo / just / git。</div>';
+  } else {
+    runs.forEach(r => {
+      const cls = r.running ? 'warn' : (r.exit_code === 0 ? 'ok' : 'fail');
+      const lbl = r.running ? '运行中' : (r.exit_code === 0 ? `${r.duration_ms}ms` : `退出 ${r.exit_code}`);
+      const fullCmd = [r.cmd, ...(r.args || [])].join(' ');
+      const row = document.createElement('div');
+      row.className = 'ledger-row';
+      row.innerHTML = `
+        <div class="ledger-name"><span class="dot ${cls}"></span><span style="font-family:var(--mono);font-size:12px">${new Date(r.started_at).toLocaleTimeString()}</span></div>
+        <div class="ledger-ev"><div class="clamp-2" title="${esc(fullCmd)}" style="font-family:var(--mono);font-size:12px;color:var(--ink)">${esc(fullCmd)}</div><div style="font-size:11.5px;color:var(--ink-3)">${esc(r.guest_cwd || '')}</div></div>
+        <div style="text-align:right"><span class="tag ${cls}">${lbl}</span></div>`;
+      rb.appendChild(row);
+    });
+  }
+}
+
+async function testHostTool(cmd, btn) {
+  btn.disabled = true; btn.textContent = '...';
+  try {
+    const res = await req('/admin/hostexec/test', {method: 'POST', body: JSON.stringify({cmd})});
+    if (res.hostexec) { state.hostexec = res.hostexec; renderHostExec(); }
+    toast(`${cmd} 正常 (${res.duration_ms}ms): ${res.output || 'ok'}`);
+  } catch (e) {
+    toast(`${cmd} 测试失败: ${e.message}`);
+  } finally {
+    btn.disabled = false; btn.textContent = '测试';
+  }
+}
+
+async function addHostTool(explicitName) {
+  const inp = document.getElementById('addHostToolInput');
+  const name = (explicitName || inp.value || '').trim();
+  if (!name) return;
+  try {
+    const data = await req('/admin/hostexec/add-tool', {method: 'POST', body: JSON.stringify({name})});
+    if (!explicitName) inp.value = '';
+    render(data);
+    toast(`已将 ${name} 动态加入宿主机代理（立即生效，免重启）`);
+  } catch (e) {
+    toast(`加入失败：${e.message}`);
+  }
+}
+
+async function clearUnproxied() {
+  try {
+    render(await req('/admin/hostexec/unproxied/clear', {method: 'POST'}));
+    toast('已清空未代理命令记录');
+  } catch (e) { toast(e.message); }
+}
+
+function renderUpdates() {
+  const upd = state.updates || {};
+  const comps = upd.components || [];
+  const badge = document.getElementById('navUpdBadge');
+  if (upd.has_updates && upd.update_count > 0) {
+    badge.textContent = `+${upd.update_count}`;
+    badge.style.color = 'var(--accent)';
+    badge.style.fontWeight = '700';
+  } else if (comps.length > 0) {
+    badge.textContent = '最新';
+    badge.style.color = 'var(--ok)';
+    badge.style.fontWeight = '500';
+  } else {
+    badge.textContent = '-';
+  }
+
+  document.getElementById('updCheckedAt').textContent = upd.checked_at ? ('最近检查 ' + new Date(upd.checked_at).toLocaleTimeString()) : '等待首次检查';
+  const box = document.getElementById('updatesLedger');
+  box.innerHTML = '';
+  if (!comps.length) {
+    box.innerHTML = '<div style="padding:18px;color:var(--ink-3);font-size:13px">正在后台检查最新版本，可点击右上角「立即检查更新」...</div>';
+  } else {
+    comps.forEach(c => {
+      const cls = c.status === 'up_to_date' ? 'ok' : (c.status === 'update_available' ? 'warn' : 'muted');
+      const lbl = c.status === 'up_to_date' ? '最新' : (c.status === 'update_available' ? '可更新' : '未知');
+      const row = document.createElement('div');
+      row.className = 'ledger-row';
+      row.innerHTML = `
+        <div class="ledger-name"><span class="dot ${cls === 'muted' ? 'warn' : cls}"></span><span>${esc(c.name)}</span></div>
+        <div class="ledger-ev">
+          <span style="font-family:var(--mono)">当前 <strong>${esc(c.current || '-')}</strong> → 最新 <strong>${esc(c.latest || '-')}</strong></span>
+          ${c.note ? `<div style="font-size:12px;color:var(--ink-3);margin-top:2px">${esc(c.note)}</div>` : ''}
+        </div>
+        <div style="text-align:right"><span class="tag ${cls}">${lbl}</span></div>`;
+      box.appendChild(row);
+    });
+  }
+
+  const logSheet = document.getElementById('updLogSheet');
+  if (upd.last_update_log) {
+    logSheet.style.display = 'block';
+    document.getElementById('updLogPre').textContent = upd.last_update_log;
+  }
+}
+
+async function checkUpdates() {
+  const b = document.getElementById('updCheckBtn');
+  b.disabled = true; b.textContent = '检查中...';
+  try {
+    render(await req('/admin/updates/check', {method: 'POST'}));
+    toast('版本检查完成');
+  } catch (e) { toast('检查失败：' + e.message); }
+  finally { b.disabled = false; b.textContent = '立即检查更新'; }
+}
+
+async function upgradeClaudeCode() {
+  const b = document.getElementById('updClaudeBtn');
+  b.disabled = true; b.textContent = '升级中...';
+  toast('正在容器内通过隔离代理升级 Claude Code CLI...');
+  try {
+    render(await req('/admin/updates/claude-code', {method: 'POST'}));
+    toast('Claude Code CLI 升级完成！');
+  } catch (e) { toast('升级失败：' + e.message); }
+  finally { b.disabled = false; b.textContent = '一键升级 Claude CLI'; }
+}
+
+function visibleNodes() {
+  const nodes = (state.gateway && state.gateway.nodes) || [];
+  const q = document.getElementById('nodeSearch').value.trim().toLowerCase();
+  const hide = document.getElementById('hideBlocked').checked;
+  return nodes.filter(n => {
+    if (hide && /(香港|HKG|俄罗斯|RUS|建议每日|海外用户|过期|流量)/i.test(n)) return false;
+    if (q && !n.toLowerCase().includes(q)) return false;
+    return true;
+  });
+}
+
+function renderNodes() {
+  const box = document.getElementById('nodeList');
+  const cur = (state.gateway && state.gateway.selected_node) || '';
+  const list = visibleNodes();
+  box.innerHTML = '';
+  if (!list.length) {
+    box.innerHTML = '<div style="padding:18px;color:var(--ink-3);font-size:13px">暂无匹配节点</div>';
+    return;
+  }
+  list.forEach(n => {
+    const active = n === cur;
+    const btn = document.createElement('button');
+    btn.className = 'node-row' + (active ? ' active' : '');
+    btn.onclick = () => pickNode(n);
+    const d = delays[n];
+    let ping = '<span class="ping"></span>';
+    if (d === 'testing') ping = '<span class="ping">...</span>';
+    else if (d === 'err') ping = '<span class="ping slow">超时</span>';
+    else if (typeof d === 'number') {
+      const c = d < 1200 ? 'fast' : (d < 3000 ? 'med' : 'slow');
+      ping = `<span class="ping ${c}">${d} ms</span>`;
+    } else if (active && state.report && state.report.latency_ms > 0) {
+      const lm = state.report.latency_ms;
+      const c = lm < 900 ? 'fast' : (lm < 2200 ? 'med' : 'slow');
+      ping = `<span class="ping ${c}">${lm} ms</span>`;
+    }
+    const checkSvg = active ? '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>' : '';
+    btn.innerHTML = `<span class="node-left"><span class="node-check">${checkSvg}</span><span class="node-title">${esc(n)}</span></span>${ping}`;
+    box.appendChild(btn);
+  });
+}
+
+function fmtReset(iso) {
+  if (!iso) return '';
+  try {
+    const dt = new Date(iso);
+    const diffMin = Math.round((dt - Date.now()) / 60000);
+    if (diffMin <= 0) return '即将重置';
+    if (diffMin < 120) return `${diffMin} 分钟后重置`;
+    const hrs = Math.floor(diffMin / 60);
+    const mins = diffMin % 60;
+    if (hrs < 36) return `${hrs}h ${mins}m 后重置`;
+    return dt.toLocaleString('zh-CN', {month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'}) + ' 重置';
+  } catch { return iso; }
+}
+
+function renderQuotaBox(label, pct, resetISO) {
+  const p = Math.max(0, Math.min(100, Math.round(pct || 0)));
+  const cls = p >= 90 ? 'fail' : (p >= 70 ? 'warn' : '');
+  return `<div class="quota-item">
+    <div class="quota-head"><span>${esc(label)}</span><strong style="font-family:var(--mono)">${p}%</strong></div>
+    <div class="quota-bar"><div class="quota-fill ${cls}" style="width:${p}%"></div></div>
+    <div class="quota-reset">${esc(fmtReset(resetISO))}</div>
+  </div>`;
+}
+
+function renderAccounts() {
+  const box = document.getElementById('accList');
+  const accs = state.accounts || [];
+  box.innerHTML = '';
+  accs.forEach(a => {
+    const cool = a.cooldown_until && new Date(a.cooldown_until) > new Date();
+    const tag = a.logged_in ? (cool ? '<span class="tag fail">冷却中</span>' : '<span class="tag ok">已登录</span>') : '<span class="tag warn">未登录</span>';
+    const u = a.usage || null;
+    const planLabel = u && (u.plan_tier || u.subscription_type) ? `<span class="tag muted">${esc((u.plan_tier || u.subscription_type).toUpperCase().replace(/_/g, ' '))}</span>` : '';
+    const emailHtml = u && u.email ? `<span style="font-weight:400;font-size:12.5px;color:var(--ink-2)">${esc(u.email)}</span>` : '';
+
+    let quotaHtml = '';
+    if (u && (u.five_hour || u.seven_day || (u.model_scoped && u.model_scoped.length))) {
+      const blocks = [];
+      if (u.five_hour) blocks.push(renderQuotaBox('5 小时会话窗口', u.five_hour.used_percent, u.five_hour.resets_at));
+      if (u.seven_day) blocks.push(renderQuotaBox('7 天总限额窗口', u.seven_day.used_percent, u.seven_day.resets_at));
+      (u.model_scoped || []).forEach(m => blocks.push(renderQuotaBox(`模型专项 · ${m.name}`, m.used_percent, m.resets_at)));
+      quotaHtml = `<div class="quota-grid">${blocks.join('')}</div>`;
+    } else if (u && u.error) {
+      quotaHtml = `<div style="width:100%;margin-top:8px;font-size:12px;color:var(--warn)">${esc(u.error)}</div>`;
+    }
+
+    const checkedNote = u && u.checked_at ? ` · 用量更新 ${new Date(u.checked_at).toLocaleTimeString()}` : '';
+    const row = document.createElement('div');
+    row.className = 'acc-row';
+    row.innerHTML = `
+      <div>
+        <div class="acc-name">${esc(a.id)} ${tag} ${planLabel} ${emailHtml}</div>
+        <div class="acc-meta">requests=${a.total_requests || 0}${checkedNote}${a.last_error ? ' · ' + esc(a.last_error) : ''}</div>
+      </div>
+      <div class="row">
+        ${a.logged_in ? `<button class="btn sm accent" onclick="queryUsage('${esc(a.id)}', this)">查用量</button>` : ''}
+        <button class="btn sm" onclick="copyText('edualc login ${esc(a.id)}')">复制登录命令</button>
+        <button class="btn sm" onclick="toggleAcc('${esc(a.id)}', ${!a.enabled})">${a.enabled ? '停用' : '启用'}</button>
+      </div>
+      ${quotaHtml}`;
+    box.appendChild(row);
+  });
+}
+
+async function queryUsage(id, btn) {
+  const targetBtn = btn || document.getElementById('usageAllBtn');
+  const orig = targetBtn.textContent;
+  targetBtn.disabled = true; targetBtn.textContent = '查询中...';
+  try {
+    render(await req('/admin/accounts/usage', {method: 'POST', body: JSON.stringify({id})}));
+    toast('用量查询已更新');
+  } catch (e) { toast('查询失败：' + e.message); }
+  finally { targetBtn.disabled = false; targetBtn.textContent = orig; }
+}
+
+async function refresh() {
+  try { render(await req('/admin/status')); }
+  catch (e) { if (!e.message.includes('RELAY_API_KEY')) toast(e.message); }
+}
+
+async function runCheck() {
+  const b = document.getElementById('recheckBtn');
+  b.disabled = true; b.textContent = '检测中...';
+  try { render(await req('/admin/check', {method: 'POST'})); toast('检测完成'); }
+  catch (e) { toast(e.message); }
+  finally { b.disabled = false; b.textContent = '重新检测'; }
+}
+
+async function pickNode(node) {
+  toast('切换节点并重新同步环境中...');
+  try { render(await req('/admin/proxy/select', {method: 'POST', body: JSON.stringify({node})})); toast('已切换：' + node); }
+  catch (e) { toast(e.message); }
+}
+
+async function testDelays() {
+  const list = visibleNodes().slice(0, 25);
+  const b = document.getElementById('delayBtn');
+  b.disabled = true; b.textContent = '测速中...';
+  list.forEach(n => delays[n] = 'testing');
+  renderNodes();
+  await Promise.all(list.map(async n => {
+    try { delays[n] = (await req('/admin/proxy/delay?node=' + encodeURIComponent(n))).delay_ms; }
+    catch { delays[n] = 'err'; }
+    renderNodes();
+  }));
+  b.disabled = false; b.textContent = '测速当前列表';
+}
+
+async function applySub() {
+  toast('正在拉取订阅并清洗规则...');
+  try {
+    render(await req('/admin/proxy/subscription', {
+      method: 'POST',
+      body: JSON.stringify({
+        subscription_url: document.getElementById('subUrl').value.trim(),
+        raw_yaml: document.getElementById('rawYaml').value,
+        landing_proxy_url: document.getElementById('landingUrl').value.trim()
+      })
+    }));
+    toast('订阅已应用');
+  } catch (e) { toast(e.message); }
+}
+
+async function applyStatic() {
+  try {
+    render(await req('/admin/proxy/static', {method: 'POST', body: JSON.stringify({proxy_url: document.getElementById('staticUrl').value.trim()})}));
+    toast('静态代理已应用');
+  } catch (e) { toast(e.message); }
+}
+
+async function savePolicy(bindCurrent) {
+  try {
+    render(await req('/admin/policy', {
+      method: 'POST',
+      body: JSON.stringify({
+        bind_current: bindCurrent,
+        policy: {
+          mode: document.getElementById('polMode').value,
+          scope: document.getElementById('polScope').value,
+          country_code: document.getElementById('polCountry').value.trim(),
+          ip: document.getElementById('polIP').value.trim(),
+          region: document.getElementById('polRegion').value.trim(),
+          city: document.getElementById('polCity').value.trim()
+        }
+      })
+    }));
+    toast(bindCurrent ? '已锁定当前出口' : '策略已保存');
+  } catch (e) { toast(e.message); }
+}
+
+async function createAcc() {
+  const id = document.getElementById('newAcc').value.trim();
+  if (!id) return;
+  try {
+    await req('/admin/accounts', {method: 'POST', body: JSON.stringify({id})});
+    document.getElementById('newAcc').value = '';
+    toast('已新建槽位：' + id);
+    refresh();
+  } catch (e) { toast(e.message); }
+}
+
+async function toggleAcc(id, enabled) {
+  try { await req('/admin/accounts/toggle', {method: 'POST', body: JSON.stringify({id, enabled})}); refresh(); }
+  catch (e) { toast(e.message); }
+}
+
+async function sendChat() {
+  const inp = document.getElementById('chatInput');
+  const prompt = inp.value.trim();
+  if (!prompt) return;
+  inp.value = '';
+  const stream = document.getElementById('chatStream');
+  const btn = document.getElementById('sendBtn');
+  btn.disabled = true;
+
+  const u = document.createElement('div'); u.className = 'msg user'; u.textContent = prompt;
+  stream.appendChild(u);
+  const a = document.createElement('div'); a.className = 'msg ai'; a.textContent = '...';
+  stream.appendChild(a);
+  stream.scrollTop = stream.scrollHeight;
+
+  try {
+    const r = await fetch('/v1/chat/completions', {
+      method: 'POST', headers: headers(),
+      body: JSON.stringify({model: document.getElementById('chatModel').value, stream: true, messages: [{role: 'user', content: prompt}]})
+    });
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}));
+      throw new Error(e.error?.message || ('HTTP ' + r.status));
+    }
+    const reader = r.body.getReader(), dec = new TextDecoder();
+    let buf = '', out = ''; a.textContent = '';
+    while (true) {
+      const {value, done} = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, {stream: true});
+      const lines = buf.split('\n'); buf = lines.pop();
+      for (const l of lines) {
+        if (!l.startsWith('data: ')) continue;
+        const p = l.slice(6).trim(); if (p === '[DONE]') continue;
+        try {
+          const d = JSON.parse(p).choices?.[0]?.delta?.content;
+          if (d) { out += d; a.textContent = out; stream.scrollTop = stream.scrollHeight; }
+        } catch {}
+      }
+    }
+    if (!out) a.textContent = '（空响应）';
+  } catch (e) {
+    a.textContent = e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+let autoPollTimer = null;
+function schedulePoll() {
+  clearTimeout(autoPollTimer);
+  const authorized = !!(state.report && state.report.authorized);
+  autoPollTimer = setTimeout(async () => {
+    try { render(await req('/admin/status')); } catch {}
+    schedulePoll();
+  }, authorized ? 30000 : 10000);
+}
+
+refresh().finally(schedulePoll);
+</script>
+</body>
+</html>

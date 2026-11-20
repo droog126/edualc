@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Resolve real project root even when invoked through a symlink in ~/.local/bin/edualc
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+ROOT_DIR="$(cd -P "$(dirname "$SOURCE")/.." && pwd)"
+
+PORT="8317"
+if [ -f "${ROOT_DIR}/.env" ]; then
+  P="$(grep -E '^HOST_PORT=' "${ROOT_DIR}/.env" | cut -d= -f2 || true)"
+  [ -n "$P" ] && PORT="$P"
+fi
+
+ACCOUNT="default"
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -a|--account)
+      ACCOUNT="${2:?缺少账号名称}"
+      shift 2
+      ;;
+    status)
+      curl -sS "http://127.0.0.1:${PORT}/admin/status" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+r = d.get("report", {})
+loc = r.get("location") or {}
+gw = d.get("gateway") or {}
+checks = r.get("checks") or []
+passed = sum(1 for c in checks if c.get("state") == "passed")
+state_txt = "已放行" if r.get("authorized") else "已熔断"
+print(f"门控状态 : {state_txt} ({passed}/{len(checks)})")
+if r.get("block_reason"):
+    print("拦截原因 :", r.get("block_reason"))
+lat = r.get("latency_ms") or 0
+lat_txt = f" · {lat} ms" if lat > 0 else ""
+print("出口 IP  : %s (%s · %s)%s" % (r.get("exit_ip", "-"), loc.get("country_code", "-"), loc.get("city", "-"), lat_txt))
+print("同步环境 : TZ=%s  LANG=%s" % (r.get("synced_tz", "-"), r.get("synced_locale", "-")))
+print("当前节点 :", gw.get("selected_node", "-"))
+accs = ["%s(%s)" % (a["id"], "已登录" if a.get("logged_in") else "未登录") for a in (d.get("accounts") or [])]
+print("账号池   :", ", ".join(accs) or "无")
+'
+      exit 0
+      ;;
+    browser)
+      shift
+      URL="${1:-https://claude.ai}"
+      docker exec -d -u airlock -e DISPLAY=:79 -e HOME=/data/desktop -e XDG_RUNTIME_DIR=/run/airlock-desktop \
+        mini-cage-desktop /usr/local/bin/airlock-browser "$URL"
+      echo "[edualc] 已在隔离浏览器中打开: ${URL}"
+      echo "         查看画面: http://127.0.0.1:8320/edualc-desktop.html 或控制台「隔离浏览器」页"
+      exit 0
+      ;;
+    login)
+      shift
+      TARGET="${1:-$ACCOUNT}"
+      exec "${ROOT_DIR}/scripts/login.sh" "$TARGET"
+      ;;
+    resume)
+      shift
+      exec python3 "${ROOT_DIR}/scripts/batch-resume.py" --account "$ACCOUNT" "$@"
+      ;;
+    -h|--help)
+      cat <<'EOF'
+edualc — 宿主机直连隔离容器终端
+
+用法：
+  edualc                     进入隔离容器 /workspace 交互终端（原生终端手感）
+  edualc claude [参数...]     直接在隔离容器内运行官方 claude CLI
+  edualc login [账号名]       在隔离环境内执行 claude auth login
+  edualc resume [参数...]     外置批量续跑中断的 Claude Desktop 会话（--list / --all / --watch）
+  edualc browser [URL]       在隔离浏览器中打开指定网址
+  edualc status              查看安全门控、出口 IP、同步时区与账号状态
+  edualc -a <账号> [命令...]  指定账号槽位运行（默认 default）
+EOF
+      exit 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+# Fail-closed guard before launching claude directly
+if [ "${1:-}" = "claude" ]; then
+  if ! curl -sf "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
+    echo "[edualc] 安全门控未放行，已拒绝启动 claude。运行 'edualc status' 或打开 http://127.0.0.1:${PORT}/ui 查看原因。" >&2
+    exit 1
+  fi
+fi
+
+TTY_FLAGS="-i"
+[ -t 0 ] && [ -t 1 ] && TTY_FLAGS="-it"
+
+exec docker exec ${TTY_FLAGS} -e "ACCOUNT=${ACCOUNT}" -e "TERM=${TERM:-xterm-256color}" \
+  mini-cage-relay /usr/local/bin/airlock-shell.sh "$@"
