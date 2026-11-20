@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -221,7 +222,14 @@ func main() {
 }
 
 func loadConfig() hostConfig {
-	listen := envOr("HOSTEXEC_ADDR", "127.0.0.1:8325")
+	port := envOr("HOSTEXEC_PORT", "8325")
+	defaultHost := "127.0.0.1"
+	// Native Linux Docker Engine routes host.docker.internal via docker0 bridge IP (e.g. 172.17.0.1),
+	// which cannot reach loopback 127.0.0.1; bind all interfaces on Linux (still protected by X-HostExec-Token).
+	if runtime.GOOS == "linux" {
+		defaultHost = "0.0.0.0"
+	}
+	listen := envOr("HOSTEXEC_ADDR", defaultHost+":"+port)
 	token := strings.TrimSpace(os.Getenv("HOSTEXEC_TOKEN"))
 	if token == "" {
 		token = strings.TrimSpace(os.Getenv("INTERNAL_TOKEN"))

@@ -302,6 +302,16 @@ func (m *autoToolManager) ensureShimSymlink(name string) error {
 		return err
 	}
 	linkPath := filepath.Join(m.shimsDir, name)
+	// On Windows hosts, symlinks require Administrator/Developer Mode and do not execute cleanly
+	// across NTFS -> Linux Docker Desktop bind mounts; emit a tiny LF POSIX wrapper script instead.
+	if runtime.GOOS == "windows" {
+		wrapper := fmt.Sprintf("#!/bin/sh\nexec /usr/local/bin/hostshim %q \"$@\"\n", name)
+		if existing, err := os.ReadFile(linkPath); err == nil && string(existing) == wrapper {
+			return nil
+		}
+		_ = os.Remove(linkPath)
+		return os.WriteFile(linkPath, []byte(wrapper), 0o755)
+	}
 	if target, err := os.Readlink(linkPath); err == nil && target == "/usr/local/bin/hostshim" {
 		return nil
 	}

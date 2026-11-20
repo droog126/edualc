@@ -2,10 +2,21 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+for dep in docker go; do
+  if ! command -v "$dep" >/dev/null 2>&1; then
+    echo "[edualc] 缺少前置依赖: $dep，请先安装后重试。" >&2
+    exit 1
+  fi
+done
+if ! docker info >/dev/null 2>&1; then
+  echo "[edualc] Docker 守护进程未运行，请先启动 Colima / OrbStack / Docker Desktop。" >&2
+  exit 1
+fi
+
 if [ ! -f .env ]; then
   cp .env.example .env
 fi
-mkdir -p workspace
+mkdir -p workspace data/runtime/shims data/shared-tmp data/accounts data/config data/gateway data/desktop
 
 ./scripts/hostexec.sh start
 docker compose up -d --build gateway relay desktop

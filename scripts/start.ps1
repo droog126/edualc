@@ -1,11 +1,25 @@
 ﻿$ErrorActionPreference = "Stop"
 Set-Location (Join-Path $PSScriptRoot "..")
 
+foreach ($dep in @("docker", "go")) {
+    if (-not (Get-Command $dep -ErrorAction SilentlyContinue)) {
+        Write-Error "[edualc] 缺少前置依赖: $dep，请先安装后重试。"
+        exit 1
+    }
+}
+docker info *> $null
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "[edualc] Docker 未运行，请先启动 Docker Desktop (WSL2 后端)。"
+    exit 1
+}
+
 if (-not (Test-Path ".env")) {
     Copy-Item ".env.example" ".env"
 }
-if (-not (Test-Path "workspace")) {
-    New-Item -ItemType Directory -Path "workspace" | Out-Null
+foreach ($d in @("workspace", "data\runtime\shims", "data\shared-tmp", "data\accounts", "data\config", "data\gateway", "data\desktop")) {
+    if (-not (Test-Path $d)) {
+        New-Item -ItemType Directory -Force -Path $d | Out-Null
+    }
 }
 
 & (Join-Path $PSScriptRoot "hostexec.ps1") -Action start
