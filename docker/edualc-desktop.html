@@ -85,17 +85,27 @@
     background: #141311; color: #f1efe9; border: 1px solid rgba(255,255,255,0.16);
     border-radius: 7px; padding: 8px; font-size: 13px; resize: vertical;
   }
+  .drop-overlay {
+    position: fixed; inset: 12px; z-index: 95; display: none; place-items: center;
+    border: 2px dashed #c96442; border-radius: 14px;
+    background: rgba(24, 23, 21, 0.78); backdrop-filter: blur(4px);
+    color: #f6f4ef; font-size: 15px; font-weight: 600; pointer-events: none;
+  }
+  .drop-overlay.show { display: grid; }
 </style>
 </head>
 <body>
   <div id="screen"></div>
+  <div id="dropOverlay" class="drop-overlay">松开鼠标即可直接把图片粘贴到 Claude 输入框</div>
+  <input id="imgPicker" type="file" accept="image/*" style="display:none" />
 
   <div id="hud" class="hud show">
     <span id="dot" class="dot"></span>
     <span id="status">连接中...</span>
     <span class="sep">|</span>
     <button class="accent" onclick="toggleIMEDock()" title="使用宿主机原生中文输入法（快捷键 Option/Alt + Space）">中文输入 (⌥Space)</button>
-    <button onclick="openClipModal()" title="手动粘贴或读取容器剪贴板">剪贴板</button>
+    <button onclick="pickImageToPaste()" title="选择本地图片直接粘贴到 Claude">贴图</button>
+    <button onclick="openClipModal()" title="手动粘贴文字/图片或读取容器剪贴板">剪贴板</button>
     <button onclick="toggleFS()">全屏</button>
   </div>
 
@@ -116,10 +126,11 @@
 
   <div id="clipModal" class="clip-modal" onclick="if(event.target===this)closeClipModal()">
     <div class="clip-box">
-      <div style="font-weight:600;font-size:13.5px">UTF-8 双向剪贴板</div>
-      <div style="font-size:12px;color:#9e9a90;margin-top:2px">直接按 Cmd/Ctrl+C/V 可自动同步；此处可手动查看或粘贴</div>
-      <textarea id="clipText" placeholder="粘贴任意中英文文本..."></textarea>
+      <div style="font-weight:600;font-size:13.5px">UTF-8 / 图片双向剪贴板</div>
+      <div style="font-size:12px;color:#9e9a90;margin-top:2px">直接按 Cmd/Ctrl+C/V 或拖拽图片即可同步；在此框按 Cmd/Ctrl+V 也可直接贴图</div>
+      <textarea id="clipText" placeholder="粘贴任意文字或截图图片..."></textarea>
       <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="pickImageToPaste()" style="padding:5px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.08);color:#f1efe9;cursor:pointer">选图粘贴</button>
         <button onclick="pullContainerClip()" style="padding:5px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.08);color:#f1efe9;cursor:pointer">读取容器剪贴板</button>
         <button onclick="pushModalClip()" style="padding:5px 10px;border-radius:6px;border:0;background:#c96442;color:#fff;cursor:pointer">发送到容器并粘贴</button>
         <button onclick="closeClipModal()" style="padding:5px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.16);background:transparent;color:#ccc;cursor:pointer">关闭</button>
@@ -230,10 +241,72 @@ async function copyToHostClipboard(text) {
   }
 }
 
+async function blobToPngBlob(blob) {
+  if (!blob) return null;
+  if (blob.type === 'image/png') return blob;
+  try {
+    const bmp = await createImageBitmap(blob);
+    const canvas = document.createElement('canvas');
+    canvas.width = bmp.width;
+    canvas.height = bmp.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bmp, 0, 0);
+    bmp.close?.();
+    return await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+  } catch {
+    return blob;
+  }
+}
+
+async function pushImageToContainer(blob, sendPasteKey = true) {
+  if (!blob) return false;
+  const png = await blobToPngBlob(blob);
+  if (!png || !png.size) return false;
+  try {
+    const res = await fetch(clipEndpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'image/png' },
+      body: png,
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+  } catch (err) {
+    notify('图片上传到容器剪贴板失败: ' + err.message);
+    return false;
+  }
+  notify(`已同步图片 (${Math.max(1, Math.round(png.size / 1024))} KB)`);
+  if (sendPasteKey) {
+    rfb?.focus();
+    setTimeout(() => {
+      sendCtrlKey(0x0076, 'KeyV');
+    }, 90);
+  }
+  return true;
+}
+
+async function copyImageToHostClipboard(blob) {
+  if (!blob || !navigator.clipboard?.write || typeof ClipboardItem === 'undefined') return false;
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function pullFromContainerToHost(showToast = false) {
   try {
-    const res = await fetch(clipEndpoint, { cache: 'no-store' });
+    const url = showToast ? `${clipEndpoint}&type=auto` : clipEndpoint;
+    const res = await fetch(url, { cache: 'no-store' });
     if (!res.ok) return '';
+    const ct = (res.headers.get('Content-Type') || '').toLowerCase();
+    if (ct.startsWith('image/')) {
+      const blob = await res.blob();
+      if (blob.size > 0) {
+        const ok = await copyImageToHostClipboard(blob);
+        if (showToast && ok) notify('已复制容器图片到本机剪贴板');
+      }
+      return '';
+    }
     const text = await res.text();
     if (text && text !== lastContainerClip) {
       lastContainerClip = text;
@@ -250,6 +323,33 @@ async function pullFromContainerToHost(showToast = false) {
 }
 
 async function pasteFromHostToContainer() {
+  // 1. Modern Clipboard API: read BOTH images (screenshots/copied pics) and text
+  if (navigator.clipboard?.read) {
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const imgType = item.types.find((t) => t.startsWith('image/'));
+        if (imgType) {
+          const blob = await item.getType(imgType);
+          await pushImageToContainer(blob, true);
+          return;
+        }
+      }
+      for (const item of items) {
+        if (item.types.includes('text/plain')) {
+          const blob = await item.getType('text/plain');
+          const text = await blob.text();
+          if (text) {
+            await pushTextToContainer(text, true);
+            return;
+          }
+        }
+      }
+    } catch {
+      // Fall through to readText / modal
+    }
+  }
+  // 2. Text-only fallback
   try {
     const text = await navigator.clipboard.readText();
     if (text) {
@@ -258,11 +358,57 @@ async function pasteFromHostToContainer() {
     }
   } catch {
     openClipModal();
-    notify('请在此框按 Cmd/Ctrl+V 粘贴');
+    notify('请在此框按 Cmd/Ctrl+V 粘贴文字或图片');
     return;
   }
   sendCtrlKey(0x0076, 'KeyV');
 }
+
+const dropOverlay = document.getElementById('dropOverlay');
+const imgPicker = document.getElementById('imgPicker');
+window.pickImageToPaste = () => {
+  closeClipModal();
+  imgPicker.value = '';
+  imgPicker.click();
+};
+imgPicker.addEventListener('change', async () => {
+  const f = imgPicker.files?.[0];
+  if (f && f.type.startsWith('image/')) {
+    await pushImageToContainer(f, true);
+  }
+});
+
+let dragDepth = 0;
+window.addEventListener('dragenter', (e) => {
+  if (e.dataTransfer?.types?.includes('Files')) {
+    e.preventDefault();
+    dragDepth++;
+    dropOverlay.classList.add('show');
+  }
+});
+window.addEventListener('dragover', (e) => {
+  if (e.dataTransfer?.types?.includes('Files')) {
+    e.preventDefault();
+  }
+});
+window.addEventListener('dragleave', (e) => {
+  if (dragDepth > 0) {
+    dragDepth--;
+    if (dragDepth === 0) dropOverlay.classList.remove('show');
+  }
+});
+window.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  dragDepth = 0;
+  dropOverlay.classList.remove('show');
+  const files = Array.from(e.dataTransfer?.files || []);
+  const img = files.find((f) => f.type.startsWith('image/'));
+  if (img) {
+    await pushImageToContainer(img, true);
+  } else if (files.length) {
+    notify('目前拖拽快捷粘贴仅支持图片文件');
+  }
+});
 
 // ---- Native Host Chinese IME Dock ----
 function openIMEDock() {
@@ -362,8 +508,19 @@ function connect() {
 }
 
 window.addEventListener('paste', (e) => {
-  if (document.getElementById('clipModal').classList.contains('open')) return;
   if (imeDock.classList.contains('open') && document.activeElement === imeInput) return;
+  const items = Array.from(e.clipboardData?.items || []);
+  const imgItem = items.find((it) => it.type && it.type.startsWith('image/'));
+  if (imgItem) {
+    const file = imgItem.getAsFile();
+    if (file) {
+      e.preventDefault();
+      if (document.getElementById('clipModal').classList.contains('open')) closeClipModal();
+      pushImageToContainer(file, true);
+      return;
+    }
+  }
+  if (document.getElementById('clipModal').classList.contains('open')) return;
   const text = e.clipboardData?.getData('text/plain');
   if (text) {
     e.preventDefault();
